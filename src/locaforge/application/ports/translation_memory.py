@@ -15,6 +15,12 @@ class TranslationMemoryStore(Protocol):
 
     def store(self, record: TranslationMemoryRecord) -> None: ...
 
+    def list_records(
+        self, source_language: str = "", target_language: str = "", search: str = ""
+    ) -> tuple[TranslationMemoryRecord, ...]: ...
+
+    def delete(self, record: TranslationMemoryRecord) -> None: ...
+
     def find_exact(
         self,
         source_language: str,

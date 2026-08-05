@@ -24,3 +24,17 @@ def test_dialog_returns_current_project_model_settings() -> None:
     assert application is not None
     assert dialog.model_settings() == settings
     dialog.close()
+
+
+def test_dialog_selects_installed_model_when_configured_model_is_missing() -> None:
+    application = QApplication.instance() or QApplication([])
+    dialog = OllamaSettingsDialog(
+        ModelSettings(model="missing-model"),
+        ("installed-model",),
+        "Connected",
+    )
+
+    assert application is not None
+    assert dialog.model_settings().model == "installed-model"
+    assert dialog.model_settings().effective_review_model == "installed-model"
+    dialog.close()

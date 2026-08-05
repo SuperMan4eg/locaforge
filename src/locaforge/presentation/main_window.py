@@ -5,10 +5,11 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QModelIndex, QSettings, Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
+from PySide6.QtCore import QModelIndex, QSettings, Qt, QTimer, QUrl
+from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox,
     QDockWidget,
@@ -46,6 +47,7 @@ from locaforge.application.ports.xml_format import XmlFieldMapping
 from locaforge.application.project_workspace import ProjectWorkspace
 from locaforge.domain.entry import EntryStatus, TranslationEntry
 from locaforge.domain.glossary import GlossaryTerm
+from locaforge.domain.settings import ModelSettings
 from locaforge.domain.translation_memory import TranslationMemoryMatch
 from locaforge.presentation.autosave_controller import AutosaveController
 from locaforge.presentation.batch_translation_worker import BatchTranslationWorker
@@ -54,11 +56,14 @@ from locaforge.presentation.json_import_profiles import (
     JsonImportProfileStore,
 )
 from locaforge.presentation.log_viewer import LogViewerController
+from locaforge.presentation.model_pull_worker import ModelPullWorker
+from locaforge.presentation.model_settings_profile import ModelSettingsProfileStore
 from locaforge.presentation.ollama_settings_dialog import OllamaSettingsDialog
 from locaforge.presentation.recent_projects import RecentProjectsStore
 from locaforge.presentation.review_worker import ReviewWorker
 from locaforge.presentation.translation_filter_proxy import TranslationFilterProxyModel
 from locaforge.presentation.translation_length import format_translation_length
+from locaforge.presentation.translation_memory_dialog import TranslationMemoryDialog
 from locaforge.presentation.translation_memory_worker import TranslationMemoryWorker
 from locaforge.presentation.translation_navigation import (
     adjacent_row_index,
@@ -88,6 +93,7 @@ class MainWindow(QMainWindow):
         self._layout_store = layout_store or WindowLayoutStore(QSettings())
         self._recent_projects = recent_projects or RecentProjectsStore(QSettings())
         self._json_import_profiles = JsonImportProfileStore(QSettings())
+        self._model_settings_profile = ModelSettingsProfileStore(QSettings())
         self._model = TranslationTableModel(self)
         self._proxy_model = TranslationFilterProxyModel()
         self._proxy_model.setSourceModel(self._model)
@@ -103,6 +109,7 @@ class MainWindow(QMainWindow):
         self._review_worker: ReviewWorker | None = None
         self._translation_memory_worker: TranslationMemoryWorker | None = None
         self._validation_worker: ValidationWorker | None = None
+        self._model_pull_worker: ModelPullWorker | None = None
         self._translation_memory_cache: dict[
             str, tuple[TranslationMemoryMatch, ...]
         ] = {}
@@ -433,6 +440,20 @@ class MainWindow(QMainWindow):
         file_menu.addAction(exit_action)
 
         review_menu = self.menuBar().addMenu("&Review")
+        self._select_qa_entries_action = QAction("Select all QA entries", self)
+        self._select_qa_entries_action.triggered.connect(self._select_all_qa_entries)
+        self._retranslate_qa_entries_action = QAction(
+            "Re-translate all QA entries", self
+        )
+        self._retranslate_qa_entries_action.triggered.connect(
+            self._retranslate_all_qa_entries
+        )
+        self._dismiss_selected_ai_issues_action = QAction(
+            "Dismiss AI issues for selected", self
+        )
+        self._dismiss_selected_ai_issues_action.triggered.connect(
+            self._dismiss_selected_ai_issues
+        )
         self._approve_selected_action = QAction("Approve selected", self)
         self._approve_selected_action.triggered.connect(self._approve_selected)
         self._reopen_selected_action = QAction("Reopen selected", self)
@@ -445,6 +466,10 @@ class MainWindow(QMainWindow):
         self._review_selected_action.triggered.connect(self._review_selected)
         self._review_all_action = QAction("AI review all Needs review", self)
         self._review_all_action.triggered.connect(self._review_all)
+        review_menu.addAction(self._select_qa_entries_action)
+        review_menu.addAction(self._retranslate_qa_entries_action)
+        review_menu.addAction(self._dismiss_selected_ai_issues_action)
+        review_menu.addSeparator()
         review_menu.addAction(self._review_selected_action)
         review_menu.addAction(self._review_all_action)
         review_menu.addSeparator()
@@ -455,6 +480,15 @@ class MainWindow(QMainWindow):
         review_menu.addAction(self._unlock_selected_action)
 
         tools_menu = self.menuBar().addMenu("&Tools")
+        self._ollama_setup_action = QAction("Ollama Setup...", self)
+        self._ollama_setup_action.triggered.connect(self._open_ollama_setup)
+        tools_menu.addAction(self._ollama_setup_action)
+        self._translation_memory_action = QAction("Translation Memory...", self)
+        self._translation_memory_action.triggered.connect(
+            self._open_translation_memory_editor
+        )
+        tools_menu.addAction(self._translation_memory_action)
+        tools_menu.addSeparator()
         self._translate_all_action = QAction("Translate all untranslated", self)
         self._translate_all_action.triggered.connect(self._translate_all_untranslated)
         self._translate_all_action.setShortcut(QKeySequence("Ctrl+Shift+T"))
@@ -1200,6 +1234,8 @@ class MainWindow(QMainWindow):
         self._start_translation(entry_ids)
 
     def _start_translation(self, entry_ids: tuple[str, ...]) -> None:
+        if not self._ensure_model_available(self._workspace.project.model_settings.model):
+            return
         worker = BatchTranslationWorker(
             lambda progress, is_cancelled: self._workspace.translate_entries(
                 entry_ids,
@@ -1278,6 +1314,75 @@ class MainWindow(QMainWindow):
     def _approve_selected(self) -> None:
         self._apply_bulk_approval(True)
 
+    def _select_all_qa_entries(self) -> None:
+        if not self._workspace.has_project or self._busy:
+            return
+        self._clear_filters()
+        self._issues_only_filter.setChecked(True)
+        issue_count = self._proxy_model.rowCount()
+        if not issue_count:
+            self.statusBar().showMessage("No entries with QA issues", 3000)
+            return
+        self._table.selectAll()
+        self.statusBar().showMessage(f"Selected {issue_count} entries with QA issues", 3000)
+
+    def _retranslate_all_qa_entries(self) -> None:
+        if not self._workspace.has_project or self._busy:
+            return
+        entry_ids = tuple(
+            entry.id
+            for entry in self._workspace.project.entries
+            if entry.id in self._validation_issues_by_entry
+            and not entry.locked
+            and entry.status is not EntryStatus.APPROVED
+        )
+        if not entry_ids:
+            QMessageBox.information(
+                self,
+                "Batch translation",
+                "There are no editable entries with QA issues.",
+            )
+            return
+        if QMessageBox.question(
+            self,
+            "Re-translate QA entries",
+            f"Re-translate {len(entry_ids)} QA entries? "
+            "Their current translations will be replaced.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        self._start_translation(entry_ids)
+
+    def _dismiss_selected_ai_issues(self) -> None:
+        if not self._workspace.has_project or self._busy:
+            return
+        entry_ids = tuple(
+            entry_id
+            for entry_id in self._selected_entry_ids()
+            if any(
+                issue.code is ValidationCode.AI_REVIEW
+                for issue in self._validation_issues_by_entry.get(entry_id, ())
+            )
+        )
+        if not entry_ids:
+            QMessageBox.information(
+                self, "AI review", "Select entries with AI review issues."
+            )
+            return
+        if QMessageBox.question(
+            self,
+            "Dismiss AI review issues",
+            f"Dismiss AI review issues for {len(entry_ids)} selected entries?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        self._run_project_action(
+            lambda: self._workspace.dismiss_ai_review_issues(entry_ids),
+            "Selected AI review issues dismissed",
+        )
+
     def _review_selected(self) -> None:
         if not self._workspace.has_project or self._busy:
             return
@@ -1299,6 +1404,9 @@ class MainWindow(QMainWindow):
         self._start_review(entry_ids)
 
     def _start_review(self, entry_ids: tuple[str, ...]) -> None:
+        review_model = self._workspace.project.model_settings.effective_review_model
+        if not self._ensure_model_available(review_model, reviewer=True):
+            return
         worker = ReviewWorker(
             lambda progress, is_cancelled: self._workspace.review_entries(
                 entry_ids,
@@ -1417,26 +1525,164 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Translating {completed} of {total}")
 
     def _open_ollama_settings(self) -> None:
-        if not self._workspace.has_project or self._busy:
+        if self._busy:
             return
+        settings = (
+            self._workspace.project.model_settings
+            if self._workspace.has_project
+            else self._model_settings_profile.load()
+        )
         try:
             models = self._workspace.list_models()
-            status_message = f"Connected — {len(models)} model(s) found"
+            if not models:
+                status_message = (
+                    "Connected — no models installed. Use Tools → Ollama Setup..."
+                )
+            elif settings.model not in models:
+                status_message = (
+                    f"Connected — configured model {settings.model} is not installed; "
+                    "an installed model was selected"
+                )
+            else:
+                status_message = f"Connected — {len(models)} model(s) found"
         except Exception as error:
             models = ()
             status_message = f"Unavailable — {error}"
         dialog = OllamaSettingsDialog(
-            self._workspace.project.model_settings,
+            settings,
             models,
             status_message,
             self,
         )
         if dialog.exec() != dialog.DialogCode.Accepted:
             return
+        if not self._workspace.has_project:
+            self._model_settings_profile.save(dialog.model_settings())
+            self.statusBar().showMessage("User model settings saved", 5000)
+            return
+        if dialog.save_as_default():
+            self._model_settings_profile.save(dialog.model_settings())
         self._run_project_action(
             lambda: self._workspace.update_model_settings(dialog.model_settings()),
             "Ollama settings updated",
         )
+
+    def _open_ollama_setup(self) -> None:
+        if self._busy:
+            return
+        try:
+            installed_models = self._workspace.list_models()
+        except Exception:
+            self._offer_ollama_installation()
+            return
+        configured_model = (
+            self._workspace.project.model_settings.model
+            if self._workspace.has_project
+            else self._model_settings_profile.load().model
+        )
+        model, accepted = QInputDialog.getText(
+            self,
+            "Install Ollama model",
+            "Model name to download:\n"
+            f"Installed: {', '.join(installed_models) if installed_models else 'none'}",
+            text=configured_model,
+        )
+        normalized_model = model.strip()
+        if not accepted or not normalized_model:
+            return
+        if normalized_model in installed_models:
+            QMessageBox.information(
+                self, "Ollama model", f"{normalized_model} is already installed."
+            )
+            return
+        if QMessageBox.question(
+            self,
+            "Install Ollama model",
+            f"Download {normalized_model}? Models can require many gigabytes of disk space.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        self._start_model_pull(normalized_model)
+
+    def _ensure_model_available(self, model: str, reviewer: bool = False) -> bool:
+        try:
+            installed_models = self._workspace.list_models()
+        except Exception:
+            self._offer_ollama_installation()
+            return False
+        if model in installed_models:
+            return True
+        if installed_models:
+            download_choice = f"Download configured model: {model}"
+            selected, accepted = QInputDialog.getItem(
+                self,
+                "Choose Ollama model",
+                f"Configured model {model} is not installed.",
+                (*installed_models, download_choice),
+                0,
+                False,
+            )
+            if not accepted:
+                return False
+            if selected != download_choice:
+                settings = self._workspace.project.model_settings
+                updated_settings = (
+                    replace(settings, review_model=selected)
+                    if reviewer
+                    else replace(settings, model=selected)
+                )
+                self._workspace.update_model_settings(updated_settings)
+                self._model_name.setText(updated_settings.model)
+                return True
+        if QMessageBox.question(
+            self,
+            "Ollama model is not installed",
+            f"Model {model} is not installed. Download it now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Yes,
+        ) == QMessageBox.StandardButton.Yes:
+            self._start_model_pull(model)
+        return False
+
+    def _offer_ollama_installation(self) -> None:
+        if QMessageBox.question(
+            self,
+            "Ollama is unavailable",
+            "LocaForge cannot connect to Ollama. Open the official Windows installer page?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Yes,
+        ) == QMessageBox.StandardButton.Yes:
+            QDesktopServices.openUrl(QUrl("https://ollama.com/download/windows"))
+
+    def _start_model_pull(self, model: str) -> None:
+        worker = ModelPullWorker(
+            model, lambda: self._workspace.pull_model(model), self
+        )
+        worker.succeeded.connect(self._model_pull_succeeded)
+        worker.failed.connect(self._model_pull_failed)
+        worker.finished.connect(worker.deleteLater)
+        self._model_pull_worker = worker
+        self._set_busy(True)
+        self._cancel_button.setEnabled(False)
+        self._progress.setRange(0, 0)
+        self.statusBar().showMessage(f"Downloading Ollama model {model}...")
+        worker.start()
+
+    def _model_pull_succeeded(self, model: str) -> None:
+        self._model_pull_worker = None
+        self._set_busy(False)
+        self.statusBar().showMessage(f"Ollama model {model} installed", 5000)
+
+    def _model_pull_failed(self, message: str) -> None:
+        self._model_pull_worker = None
+        self._set_busy(False)
+        QMessageBox.critical(self, "Ollama model installation failed", message)
+
+    def _open_translation_memory_editor(self) -> None:
+        dialog = TranslationMemoryDialog(self._workspace, self)
+        dialog.exec()
+        self._invalidate_translation_memory_cache()
 
     def _translation_succeeded(self, result_object: object) -> None:
         self._translation_worker = None
@@ -1499,6 +1745,11 @@ class MainWindow(QMainWindow):
 
     def _refresh_project(self, select_first: bool = True) -> None:
         has_project = self._workspace.has_project
+        selected_entry_id = self._current_entry_id
+        if has_project and self._workspace.project.model_settings == ModelSettings():
+            user_defaults = self._model_settings_profile.load()
+            if user_defaults != ModelSettings():
+                self._workspace.update_model_settings(user_defaults)
         self._invalidate_translation_memory_cache()
         entries = self._workspace.project.entries if has_project else []
         self._model.set_entries(entries)
@@ -1530,9 +1781,14 @@ class MainWindow(QMainWindow):
             project_actions_enabled and source_format == "xml"
         )
         self._translate_button.setEnabled(project_actions_enabled)
-        self._settings_button.setEnabled(project_actions_enabled)
+        self._settings_button.setEnabled(not self._busy)
+        self._ollama_setup_action.setEnabled(not self._busy)
+        self._translation_memory_action.setEnabled(not self._busy)
         self._translate_all_action.setEnabled(project_actions_enabled)
         self._replace_translations_action.setEnabled(project_actions_enabled)
+        self._select_qa_entries_action.setEnabled(project_actions_enabled)
+        self._retranslate_qa_entries_action.setEnabled(project_actions_enabled)
+        self._dismiss_selected_ai_issues_action.setEnabled(project_actions_enabled)
         self._approve_selected_action.setEnabled(project_actions_enabled)
         self._review_selected_action.setEnabled(project_actions_enabled)
         self._review_all_action.setEnabled(project_actions_enabled)
@@ -1558,8 +1814,15 @@ class MainWindow(QMainWindow):
             self._model_name.setText(self._workspace.project.model_settings.model)
             dirty_mark = " *" if self._workspace.project.dirty else ""
             self.setWindowTitle(f"LocaForge — {self._workspace.project.name}{dirty_mark}")
+            if selected_entry_id is not None and self._select_visible_entry_by_id(
+                selected_entry_id
+            ):
+                return
             if select_first and self._proxy_model.rowCount():
                 self._table.selectRow(0)
+            elif not select_first:
+                self._table.clearSelection()
+                self._table.setCurrentIndex(QModelIndex())
         else:
             self._model_name.setText("Not configured")
             self.setWindowTitle("LocaForge")
@@ -1874,6 +2137,9 @@ class MainWindow(QMainWindow):
     def _select_entry_by_id(self, entry_id: str) -> None:
         self._search.clear()
         self._clear_status_filter()
+        self._select_visible_entry_by_id(entry_id)
+
+    def _select_visible_entry_by_id(self, entry_id: str) -> bool:
         for row, entry in enumerate(self._workspace.project.entries):
             if entry.id != entry_id:
                 continue
@@ -1881,7 +2147,9 @@ class MainWindow(QMainWindow):
             if proxy_index.isValid():
                 self._table.selectRow(proxy_index.row())
                 self._table.scrollTo(proxy_index)
-            return
+                return True
+            return False
+        return False
 
     def _apply_issue_filter(self, enabled: bool) -> None:
         entry_ids = self._validation_issues_by_entry if enabled else None

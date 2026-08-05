@@ -99,3 +99,23 @@ def test_list_models_reads_and_sorts_ollama_tags(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr("locaforge.infrastructure.llm.ollama_client.urlopen", fake_urlopen)
 
     assert OllamaClient().list_models() == ("gemma3:12b", "qwen3:8b")
+
+
+def test_pull_model_uses_non_streaming_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(request: Any, timeout: float) -> FakeHttpResponse:
+        captured["url"] = request.full_url
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        captured["timeout"] = timeout
+        return FakeHttpResponse({"status": "success"})
+
+    monkeypatch.setattr("locaforge.infrastructure.llm.ollama_client.urlopen", fake_urlopen)
+
+    OllamaClient().pull_model("qwen3:8b")
+
+    assert captured == {
+        "url": "http://127.0.0.1:11434/api/pull",
+        "payload": {"model": "qwen3:8b", "stream": False},
+        "timeout": 3600.0,
+    }

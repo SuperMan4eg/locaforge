@@ -24,3 +24,11 @@ def test_old_model_settings_receive_default_review_prompt() -> None:
     settings = ModelSettings.from_mapping({"model": "qwen3:8b"})
 
     assert settings.review_prompt
+    assert settings.effective_review_model == "qwen3:8b"
+
+
+def test_model_settings_support_separate_reviewer_model() -> None:
+    settings = ModelSettings(model="translator", review_model="reviewer")
+
+    assert settings.effective_review_model == "reviewer"
+    assert ModelSettings.from_mapping(settings.to_dict()) == settings

@@ -213,7 +213,7 @@ def test_workspace_replaces_text_in_unlocked_translations(tmp_path: Path) -> Non
     assert workspace.project.get_entry(second_entry.id).translation == "Old second"
 
 
-def test_workspace_stores_manual_edit_and_exposes_memory_match(tmp_path: Path) -> None:
+def test_workspace_stores_approved_edit_and_exposes_memory_match(tmp_path: Path) -> None:
     source_path = tmp_path / "dialog.json"
     source_path.write_text('{"text": "Hello"}', encoding="utf-8")
     memory = SQLiteTranslationMemory(tmp_path / "tm.db")
@@ -223,6 +223,10 @@ def test_workspace_stores_manual_edit_and_exposes_memory_match(tmp_path: Path) -
     )
 
     workspace.edit_translation(project.entries[0].id, "Привет")
+
+    assert workspace.translation_memory_match(project.entries[0].id) is None
+
+    workspace.set_entry_approval(project.entries[0].id, True)
 
     match = workspace.translation_memory_match(project.entries[0].id)
     assert match is not None

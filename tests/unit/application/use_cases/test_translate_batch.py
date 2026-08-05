@@ -189,7 +189,7 @@ def test_uses_exact_translation_memory_match_without_calling_model(tmp_path: Pat
     assert repository.get_entry("project-1", "entry-1").translation == "Привет"
 
 
-def test_stores_valid_model_translation_in_translation_memory(tmp_path: Path) -> None:
+def test_does_not_store_model_translation_in_translation_memory(tmp_path: Path) -> None:
     repository = make_repository(tmp_path)
     memory = SQLiteTranslationMemory(tmp_path / "tm.db")
     llm_client = CountingLlmClient(
@@ -204,9 +204,7 @@ def test_stores_valid_model_translation_in_translation_memory(tmp_path: Path) ->
 
     assert result.translated_entry_ids == ("entry-1",)
     assert llm_client.calls == 1
-    assert memory.find_exact("en", "ru", "Hello") == TranslationMemoryRecord(
-        "en", "ru", "Hello", "Привет"
-    )
+    assert memory.find_exact("en", "ru", "Hello") is None
 
 
 def test_injects_relevant_glossary_terms_into_model_prompt(tmp_path: Path) -> None:

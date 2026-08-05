@@ -17,6 +17,7 @@ class ModelSettings:
     batch_size: int = 20
     system_prompt: str = ""
     review_prompt: str = DEFAULT_REVIEW_PROMPT
+    review_model: str = ""
 
     def __post_init__(self) -> None:
         if not self.model.strip():
@@ -25,6 +26,12 @@ class ModelSettings:
             raise ValueError("Model timeout must be positive")
         if self.batch_size < 1:
             raise ValueError("Batch size must be positive")
+        if self.review_model and not self.review_model.strip():
+            raise ValueError("Reviewer model name must not be blank")
+
+    @property
+    def effective_review_model(self) -> str:
+        return self.review_model or self.model
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -33,6 +40,7 @@ class ModelSettings:
             "batch_size": self.batch_size,
             "system_prompt": self.system_prompt,
             "review_prompt": self.review_prompt,
+            "review_model": self.review_model,
         }
 
     @classmethod
@@ -43,6 +51,7 @@ class ModelSettings:
         batch_size = values.get("batch_size")
         system_prompt = values.get("system_prompt")
         review_prompt = values.get("review_prompt")
+        review_model = values.get("review_model")
         return cls(
             model=model if isinstance(model, str) else defaults.model,
             timeout_seconds=(
@@ -61,5 +70,8 @@ class ModelSettings:
             ),
             review_prompt=(
                 review_prompt if isinstance(review_prompt, str) else defaults.review_prompt
+            ),
+            review_model=(
+                review_model if isinstance(review_model, str) else defaults.review_model
             ),
         )
