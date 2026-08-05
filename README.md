@@ -23,6 +23,15 @@ LocaForge — локальная desktop CAT-платформа для пере�
 
 ## Установка и запуск
 
+### Готовая сборка для Windows
+
+Скачайте `LocaForge-0.1.0-windows-x64.zip` на странице
+[последнего релиза](https://github.com/SuperMan4eg/locaforge/releases/latest),
+распакуйте архив и запустите `LocaForge.exe`. Устанавливать Python не требуется.
+Для локального AI-перевода Ollama устанавливается отдельно.
+
+### Установка из исходного кода
+
 ```powershell
 git clone https://github.com/SuperMan4eg/locaforge.git
 cd locaforge
