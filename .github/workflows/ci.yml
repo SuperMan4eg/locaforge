@@ -43,3 +43,80 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip build
       - run: python -m build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: python-packages
+          path: dist/*
+          if-no-files-found: error
+
+  windows-portable:
+    name: Windows portable build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install ".[build]"
+      - name: Build portable archive
+        shell: pwsh
+        run: .\scripts\build_windows.ps1
+      - name: Smoke-test packaged executable
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath ".\dist\LocaForge\LocaForge.exe" -ArgumentList "--smoke-test" -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "LocaForge.exe smoke test failed with exit code $($process.ExitCode)"
+          }
+      - name: Locate portable archive
+        id: archive
+        shell: pwsh
+        run: |
+          $archive = Get-ChildItem -LiteralPath dist -Filter "LocaForge-*-windows-x64.zip" -File
+          if ($archive.Count -ne 1) {
+            throw "Expected exactly one portable archive, found $($archive.Count)"
+          }
+          "path=$($archive.FullName)" >> $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-portable
+          path: ${{ steps.archive.outputs.path }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [quality, package, windows-portable]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Verify tag matches package version
+        run: |
+          version=$(python -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])")
+          test "v${version}" = "${GITHUB_REF_NAME}"
+      - uses: actions/download-artifact@v8
+        with:
+          name: python-packages
+          path: release-assets
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows-portable
+          path: release-assets
+      - name: Generate SHA-256 checksums
+        working-directory: release-assets
+        run: sha256sum * > SHA256SUMS.txt
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${GITHUB_REF_NAME}" release-assets/*
+          --verify-tag
+          --title "LocaForge ${GITHUB_REF_NAME#v}"
+          --generate-notes

@@ -6,10 +6,15 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $DistDirectory = Join-Path $ProjectRoot "dist"
 $BundleDirectory = Join-Path $DistDirectory "LocaForge"
-$ArchivePath = Join-Path $DistDirectory "LocaForge-0.1.0-windows-x64.zip"
 
 Push-Location $ProjectRoot
 try {
+    $Version = & $Python -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version'])"
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($Version)) {
+        throw "Cannot read the project version from pyproject.toml"
+    }
+    $ArchivePath = Join-Path $DistDirectory "LocaForge-$Version-windows-x64.zip"
+
     & $Python -m PyInstaller --clean --noconfirm packaging/locaforge.spec
     if ($LASTEXITCODE -ne 0) {
         throw "PyInstaller failed with exit code $LASTEXITCODE"
