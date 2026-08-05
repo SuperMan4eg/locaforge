@@ -45,6 +45,18 @@ class OllamaClient:
             models.append(item["name"])
         return tuple(sorted(models, key=str.casefold))
 
+    def pull_model(self, model: str) -> None:
+        normalized_model = model.strip()
+        if not normalized_model:
+            raise ValueError("Ollama model name must not be empty")
+        response = self._request_json(
+            "/api/pull",
+            {"model": normalized_model, "stream": False},
+            timeout_seconds=3600.0,
+        )
+        if response.get("status") != "success":
+            raise InvalidModelResponseError("Ollama did not confirm model installation")
+
     def translate(self, request: TranslationRequest) -> TranslationResponse:
         payload = {
             "model": request.model,

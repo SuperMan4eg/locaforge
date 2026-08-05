@@ -41,6 +41,19 @@ def test_translation_memory_separates_language_and_context(tmp_path: Path) -> No
     assert memory.find_exact("en", "de", "Open", "menu") is None
 
 
+def test_translation_memory_lists_filters_and_deletes_records(tmp_path: Path) -> None:
+    memory = SQLiteTranslationMemory(tmp_path / "tm.db")
+    menu = TranslationMemoryRecord("en", "ru", "Open", "Открыть", "menu")
+    memory.store(menu)
+    memory.store(TranslationMemoryRecord("en", "de", "Save", "Speichern"))
+
+    assert memory.list_records("en", "ru", "откр") == (menu,)
+
+    memory.delete(menu)
+
+    assert memory.list_records("en", "ru") == ()
+
+
 def test_translation_memory_ranks_similar_sources(tmp_path: Path) -> None:
     memory = SQLiteTranslationMemory(tmp_path / "tm.db")
     memory.store(TranslationMemoryRecord("en", "ru", "Start game", "Начать игру"))

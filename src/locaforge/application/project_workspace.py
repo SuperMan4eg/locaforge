@@ -42,6 +42,7 @@ from locaforge.application.use_cases.create_project_from_json import CreateProje
 from locaforge.application.use_cases.create_project_from_po import CreateProjectFromPo
 from locaforge.application.use_cases.create_project_from_xml import CreateProjectFromXml
 from locaforge.application.use_cases.dismiss_ai_review_issue import DismissAiReviewIssue
+from locaforge.application.use_cases.dismiss_ai_review_issues import DismissAiReviewIssues
 from locaforge.application.use_cases.edit_translation import EditTranslation
 from locaforge.application.use_cases.export_project_csv import ExportProjectCsv
 from locaforge.application.use_cases.export_project_json import ExportProjectJson
@@ -252,11 +253,9 @@ class ProjectWorkspace:
 
     def edit_translation(self, entry_id: str, translation: str | None) -> TranslationEntry:
         repository = self._repository()
-        entry = EditTranslation(
-            repository,
-            translation_memory=self._translation_memory,
-            glossary=self._glossary,
-        ).execute(self.project.id, entry_id, translation)
+        entry = EditTranslation(repository, glossary=self._glossary).execute(
+            self.project.id, entry_id, translation
+        )
         self._replace_entry(entry)
         return entry
 
@@ -314,7 +313,7 @@ class ProjectWorkspace:
             issue_count += reviewer.execute(
                 self.project.id,
                 batch_entry_ids,
-                settings.model,
+                settings.effective_review_model,
                 settings.timeout_seconds,
                 settings.review_prompt,
             )
@@ -328,12 +327,22 @@ class ProjectWorkspace:
         DismissAiReviewIssue(self._repository()).execute(self.project.id, entry_id)
         self.project.dirty = True
 
+    def dismiss_ai_review_issues(self, entry_ids: Sequence[str]) -> int:
+        dismissed_count = DismissAiReviewIssues(self._repository()).execute(
+            self.project.id, entry_ids
+        )
+        if dismissed_count:
+            self.project.dirty = True
+        return dismissed_count
+
     def set_entry_approval(self, entry_id: str, approved: bool) -> TranslationEntry:
         repository = self._repository()
         entry = SetEntryApproval(repository).execute(
             self.project.id, entry_id, approved
         )
         self._reload(repository)
+        if approved:
+            self._store_approved_translation_memory_record(entry)
         return entry
 
     def set_entry_locked(self, entry_id: str, locked: bool) -> TranslationEntry:
@@ -350,7 +359,25 @@ class ProjectWorkspace:
             self.project.id, entry_ids, approved
         )
         self._reload(repository)
+        if approved:
+            for entry_id in updated_entry_ids:
+                self._store_approved_translation_memory_record(
+                    self.project.get_entry(entry_id)
+                )
         return updated_entry_ids
+
+    def _store_approved_translation_memory_record(self, entry: TranslationEntry) -> None:
+        if self._translation_memory is None or entry.translation is None:
+            return
+        self._translation_memory.store(
+            TranslationMemoryRecord(
+                self.project.source_language,
+                self.project.target_language,
+                entry.source,
+                entry.translation,
+                entry.context or "",
+            )
+        )
 
     def set_entries_locked(
         self, entry_ids: Sequence[str], locked: bool
@@ -403,6 +430,25 @@ class ProjectWorkspace:
         return FindTranslationMemoryMatches(
             repository, self._translation_memory
         ).execute(self.project.id, entry_id, limit, minimum_score)
+
+    def translation_memory_records(
+        self, source_language: str = "", target_language: str = "", search: str = ""
+    ) -> tuple[TranslationMemoryRecord, ...]:
+        if self._translation_memory is None:
+            return ()
+        return self._translation_memory.list_records(
+            source_language, target_language, search
+        )
+
+    def store_translation_memory_record(self, record: TranslationMemoryRecord) -> None:
+        if self._translation_memory is None:
+            raise RuntimeError("Translation memory is not configured")
+        self._translation_memory.store(record)
+
+    def delete_translation_memory_record(self, record: TranslationMemoryRecord) -> None:
+        if self._translation_memory is None:
+            raise RuntimeError("Translation memory is not configured")
+        self._translation_memory.delete(record)
 
     def glossary_terms(self) -> tuple[GlossaryTerm, ...]:
         if self._glossary is None:
@@ -544,6 +590,11 @@ class ProjectWorkspace:
         if self._llm_client is None:
             raise ModelUnavailableError("No LLM backend is configured")
         return self._llm_client.list_models()
+
+    def pull_model(self, model: str) -> None:
+        if self._llm_client is None:
+            raise ModelUnavailableError("No LLM backend is configured")
+        self._llm_client.pull_model(model)
 
     def update_model_settings(self, settings: ModelSettings) -> Project:
         repository = self._repository()

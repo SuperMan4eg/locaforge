@@ -12,7 +12,6 @@ from locaforge.application.services.glossary_validator import GlossaryValidator
 from locaforge.application.services.placeholder_protector import PlaceholderProtector
 from locaforge.application.services.translation_validator import TranslationValidator
 from locaforge.domain.entry import TranslationEntry
-from locaforge.domain.translation_memory import TranslationMemoryRecord
 
 
 class EditTranslation:
@@ -62,14 +61,4 @@ class EditTranslation:
             entry.mark_error()
         self._project_repository.update_entry(project_id, entry)
         self._project_repository.replace_validation_issues(project_id, entry.id, issues)
-        if translation is not None and not issues and self._translation_memory is not None:
-            self._translation_memory.store(
-                TranslationMemoryRecord(
-                    project.source_language,
-                    project.target_language,
-                    entry.source,
-                    translation,
-                    entry.context or "",
-                )
-            )
         return entry

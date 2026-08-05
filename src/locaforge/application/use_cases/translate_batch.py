@@ -28,7 +28,6 @@ from locaforge.application.services.retry_policy import BatchRetryPolicy
 from locaforge.application.services.translation_validator import TranslationValidator
 from locaforge.domain.entry import EntryStatus, TranslationEntry
 from locaforge.domain.glossary import GlossaryTerm
-from locaforge.domain.translation_memory import TranslationMemoryRecord
 
 type CancellationCheck = Callable[[], bool]
 
@@ -309,9 +308,6 @@ class TranslateBatch:
             translated_entry_ids.append(entry.id)
 
         self._persist_entries(project_id, updated_entries, issues_by_entry)
-        for entry, translation in translations_to_store:
-            self._store_memory_record(source_language, target_language, entry, translation)
-
         diagnostics = "; ".join(response_diagnostics)
         pending_entries = [entry for entry in entries if entry.id not in successful_entry_ids]
         for entry in pending_entries:
@@ -402,9 +398,6 @@ class TranslateBatch:
                 translations_to_store.append((entry, representative.translation))
                 translated_entry_ids.append(entry.id)
         self._persist_entries(project_id, updated_entries, issues_by_entry)
-        for entry, translation in translations_to_store:
-            self._store_memory_record(source_language, target_language, entry, translation)
-
     def _persist_entries(
         self,
         project_id: str,
@@ -465,25 +458,6 @@ class TranslateBatch:
             self._glossary_validator.validate(entry.source, translation, terms)
         )
         return tuple(issues)
-
-    def _store_memory_record(
-        self,
-        source_language: str,
-        target_language: str,
-        entry: TranslationEntry,
-        translation: str,
-    ) -> None:
-        if self._translation_memory is None:
-            return
-        self._translation_memory.store(
-            TranslationMemoryRecord(
-                source_language,
-                target_language,
-                entry.source,
-                translation,
-                entry.context or "",
-            )
-        )
 
     @staticmethod
     def _split_eligible_entries(

@@ -41,6 +41,47 @@ class SQLiteTranslationMemory:
                 ),
             )
 
+    def list_records(
+        self, source_language: str = "", target_language: str = "", search: str = ""
+    ) -> tuple[TranslationMemoryRecord, ...]:
+        clauses: list[str] = []
+        values: list[str] = []
+        if source_language:
+            clauses.append("source_language = ?")
+            values.append(source_language)
+        if target_language:
+            clauses.append("target_language = ?")
+            values.append(target_language)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT source_language, target_language, source, translation, context "
+                f"FROM translation_memory {where} "
+                "ORDER BY source_language, target_language, source, context",
+                values,
+            ).fetchall()
+        records = tuple(
+            TranslationMemoryRecord(str(row[0]), str(row[1]), str(row[2]), str(row[3]), str(row[4]))
+            for row in rows
+        )
+        normalized_search = search.casefold().strip()
+        if not normalized_search:
+            return records
+        return tuple(
+            record
+            for record in records
+            if normalized_search
+            in f"{record.source}\n{record.translation}\n{record.context}".casefold()
+        )
+
+    def delete(self, record: TranslationMemoryRecord) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                "DELETE FROM translation_memory WHERE source_language = ? AND target_language = ? "
+                "AND source = ? AND context = ?",
+                (record.source_language, record.target_language, record.source, record.context),
+            )
+
     def find_exact(
         self,
         source_language: str,
