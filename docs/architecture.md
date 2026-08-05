@@ -1,10 +1,12 @@
-# Архитектура LocaForge (MVP)
+# Архитектура LocaForge 0.2
 
-## Цель
+## Назначение
 
-MVP переводит JSON-файл через локальную модель Ollama, позволяет отредактировать
-результат и экспортирует JSON, не меняя его исходную структуру. Архитектура
-сохраняет эту вертикаль независимой от PySide6, SQLite и конкретного LLM backend.
+LocaForge — локальная CAT-платформа для перевода JSON, CSV/TSV, Gettext PO и XML.
+Приложение импортирует исходный документ в переносимый проект `.lfproj`, позволяет
+редактировать и проверять переводы, использовать локальную модель Ollama, glossary,
+translation memory и AI review, после чего восстанавливает исходный формат при
+экспорте. Исходные файлы пользователя не изменяются.
 
 ## Правило зависимостей
 
@@ -17,72 +19,90 @@ App/bootstrap ─┘
 ```
 
 - `domain` содержит сущности, value objects и правила предметной области.
-- `application` содержит сценарии использования и порты (Protocol/ABC).
-- `infrastructure` реализует порты: SQLite, ZIP, JSON, Ollama, filesystem.
-- `presentation` преобразует действия пользователя в application-команды и
-  отображает их результат; бизнес-правил в ней нет.
-- `app` — единственное место, которое импортирует concrete implementations и
-  связывает зависимости.
+- `application` содержит сценарии использования, DTO, фасад `ProjectWorkspace` и
+  порты внешних зависимостей.
+- `infrastructure` реализует форматы файлов, SQLite-хранилища, ZIP-контейнер и
+  Ollama-клиент.
+- `presentation` содержит PySide6 widgets, models, фоновые workers и контроллеры
+  пользовательских сценариев; бизнес-правила остаются в application/domain.
+- `app` связывает конкретные реализации и запускает приложение.
 
-`domain` и `application` не импортируют PySide6, sqlite3, HTTP-клиенты, Ollama
-SDK или код парсеров.
+`domain` и `application` не импортируют PySide6, sqlite3, HTTP-клиенты или код
+конкретных парсеров.
 
-## Предлагаемые пакеты
+## Структура пакетов
 
 ```text
 src/locaforge/
-  app/                 # composition root, config, запуск приложения
-  domain/              # Project, TranslationEntry, статусы и инварианты
+  app/                    # composition root, logging, запуск приложения
+  domain/                 # Project, TranslationEntry, glossary, TM, history
   application/
-    ports/             # интерфейсы внешних зависимостей
-    use_cases/         # import, save, translate, edit, export
-    dto/               # входные команды и выходные модели
+    ports/                # форматы, persistence, LLM, glossary и TM
+    use_cases/            # import/export, edit, translate, validate, review
+    dto/                  # результаты перевода, review, validation и project
   infrastructure/
-    persistence/       # SQLite и файловая рабочая копия проекта
-    formats/           # JSON importer/exporter
-    llm/               # OllamaClient
-  presentation/        # PySide6: view models, widgets, presenters
-  shared/              # только технические утилиты без бизнес-правил
+    formats/              # JSON, CSV/TSV, PO, XML и glossary CSV
+    persistence/          # SQLite, .lfproj, glossary и translation memory
+    llm/                  # Ollama translation/review client
+  presentation/
+    *_controller.py       # UI orchestration по отдельным сценариям
+    *_worker.py           # фоновые Qt-потоки
+    main_window.py        # композиция widgets, actions и контроллеров
 ```
 
-## Основные сценарии MVP
+## Основные сценарии
 
-1. `ImportJson`: JSON превращается в `Project` и набор `TranslationEntry`.
-2. `EditTranslation`: пользователь меняет перевод одной незаблокированной записи.
-3. `TranslateBatch`: application формирует пакет, защищает placeholders, вызывает
-   `LLMClient`, валидирует и сохраняет результат.
-4. `SaveProject`: состояние сохраняется атомарно.
-5. `ExportJson`: exporter берёт исходный document model и подставляет переводы.
+1. Импорт JSON, CSV/TSV, PO или XML создаёт `Project` и сохраняет исходную
+   document model для обратного экспорта.
+2. Ручное и пакетное редактирование меняет только рабочий проект, записывает
+   историю и обновляет translation memory.
+3. Batch translation защищает placeholders, вызывает Ollama, валидирует каждый
+   ответ и сохраняет частично успешный результат.
+4. Validation проверяет структуру, placeholders, длину, glossary, согласованность
+   и другие QA-правила.
+5. AI review добавляет отдельные issues, не изменяя перевод автоматически.
+6. Экспорт выполняет preflight и восстанавливает формат импортированного документа.
 
-Каждый use case — обычный синхронный интерфейс на уровне application. Долгие
-операции запускает presentation/worker, но отмена и изменения состояния проходят
-через application use cases.
+Долгие операции выполняются `QThread` workers. Контроллеры presentation управляют
+их жизненным циклом, отменой, прогрессом и обновлением UI, а изменение данных всегда
+проходит через `ProjectWorkspace` и application use cases.
 
 ## Проект и сохранение
 
-`.lfproj` — переносимый ZIP-контейнер, но не рабочая база SQLite. При открытии:
+`.lfproj` — ZIP-контейнер, а не SQLite-база, изменяемая внутри архива. При открытии:
 
-1. контейнер распаковывается в управляемый временный рабочий каталог;
+1. контейнер распаковывается в управляемый рабочий каталог;
 2. SQLite используется только из этого каталога;
-3. сохранение записывает новый контейнер во временный файл;
+3. сохранение формирует новый контейнер во временном файле;
 4. временный файл атомарно заменяет целевой `.lfproj`;
-5. перед заменой сохраняется одна резервная копия предыдущей версии.
+5. предыдущая версия сохраняется как резервная копия.
 
-Это исключает изменение SQLite внутри ZIP и снижает риск повреждения проекта при
-сбое. Несохранённое состояние явно отражается в `Project.dirty`.
+Autosave использует тот же безопасный путь сохранения. Несохранённое состояние
+отражается в `Project.dirty`.
 
-## Ошибки и события
+## Форматы и расширение
 
-Application возвращает типизированные ошибки (`ImportError`, `ValidationError`,
-`ModelUnavailable`, `ProjectConflict`) с безопасным текстом для UI и технической
-причиной для журналирования. События нужны только для уведомления наблюдателей;
-они не заменяют вызовы use cases и не являются источником истины.
+Каждый формат реализует application-порты importer/exporter. Импорт сохраняет
+метаданные, необходимые для round trip, а экспорт заменяет только переводимые
+значения. Добавление формата не должно менять domain или UI-сценарии проекта.
 
-Для MVP достаточно: `ProjectImported`, `ProjectSaved`, `BatchStarted`,
-`BatchFinished`, `TranslationValidated`, `ProjectExported`.
+Ollama, persistence, glossary и translation memory также подключены через порты.
+Новый LLM backend или хранилище реализует соответствующий порт и регистрируется в
+`app/bootstrap.py`.
 
-## Неподвижные границы MVP
+## Presentation
 
-В первой версии поддерживается один JSON-документ, один целевой язык и Ollama.
-Translation Memory, Glossary, плагины, XML и иные backend'ы остаются будущими
-расширениями: контракты не должны требовать их реализации для запуска MVP.
+`MainWindow` является composition view: создаёт widgets и actions, после чего
+передаёт их специализированным контроллерам. Отдельные контроллеры управляют
+project I/O, import mappings, фильтрами, QA, batch translation, AI review,
+validation, translation memory, glossary, history, recent projects и model pull.
+
+Такое разделение позволяет тестировать orchestration без запуска полного окна.
+Дополнительные smoke-тесты создают реальный `MainWindow` в offscreen-режиме и
+проверяют совместимость всех сигналов и контроллеров.
+
+## Границы версии 0.2
+
+Один проект содержит один импортированный документ и одну языковую пару. Основной
+LLM backend — Ollama. Плагины, несколько файлов в одном проекте, командная работа и
+альтернативные backend'ы остаются последующими расширениями.

@@ -6,7 +6,7 @@ import logging
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QStandardPaths
+from PySide6.QtCore import QStandardPaths, QTimer
 from PySide6.QtWidgets import QApplication
 
 from locaforge.app.exception_handler import install_exception_handler
@@ -63,4 +63,6 @@ def main() -> int:
     logging.getLogger(LOGGER_NAME).info("Starting LocaForge")
     window = MainWindow(build_workspace(data_root))
     window.show()
+    if "--smoke-test" in sys.argv:
+        QTimer.singleShot(1000, application.quit)
     return application.exec()

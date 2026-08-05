@@ -4,7 +4,7 @@ LocaForge — локальная desktop CAT-платформа для пере�
 программного обеспечения с помощью локальных языковых моделей. Исходные файлы
 не отправляются во внешние сервисы и не изменяются напрямую.
 
-> Проект находится в активной разработке. Текущая версия — `0.1.0`.
+> Проект находится в активной разработке. Текущая версия — `0.2.0`.
 
 ## Возможности
 
@@ -25,7 +25,7 @@ LocaForge — локальная desktop CAT-платформа для пере�
 
 ### Готовая сборка для Windows
 
-Скачайте `LocaForge-0.1.0-windows-x64.zip` на странице
+Скачайте `LocaForge-0.2.0-windows-x64.zip` на странице
 [последнего релиза](https://github.com/SuperMan4eg/locaforge/releases/latest),
 распакуйте архив и запустите `LocaForge.exe`. Устанавливать Python не требуется.
 Для локального AI-перевода Ollama устанавливается отдельно.
@@ -57,8 +57,9 @@ python -m ruff check src tests
 python -m mypy src
 ```
 
-CI выполняет тесты, Ruff и mypy на Python 3.12 и 3.13, а также проверяет сборку
-wheel и source distribution.
+CI выполняет тесты, Ruff и mypy на Python 3.12 и 3.13, собирает wheel и source
+distribution, а также создаёт и запускает portable-сборку Windows. Тег вида
+`v0.2.0` публикует GitHub Release с архивом, Python-пакетами и SHA-256 checksums.
 
 ## Архитектура
 
@@ -78,6 +79,7 @@ App/bootstrap ─┘
 
 Подробности: [архитектура](docs/architecture.md),
 [руководство разработчика](docs/development.md) и [контракты MVP](contracts/mvp-contracts.md).
+История изменений ведётся в [CHANGELOG](CHANGELOG.md).
 
 ## Принципы проекта
 
