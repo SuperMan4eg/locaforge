@@ -31,6 +31,9 @@ class TranslationEntry:
     max_length: int | None = None
     placeholders: tuple[str, ...] = field(default_factory=tuple)
     key: str | None = None
+    document_id: str | None = None
+    model_translation: str | None = None
+    reviewer_translation: str | None = None
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -75,8 +78,34 @@ class TranslationEntry:
         """Store a validated model result without approving it."""
         if self.locked:
             raise ValueError("A locked translation entry cannot be changed")
+        self.model_translation = translation
+        self.reviewer_translation = None
         self.translation = translation
         self.status = EntryStatus.TRANSLATED
+
+    def mark_translation_memory(self, translation: str) -> None:
+        """Apply a TM result without presenting it as model-generated text."""
+        if self.locked:
+            raise ValueError("A locked translation entry cannot be changed")
+        self.translation = translation
+        self.model_translation = None
+        self.reviewer_translation = None
+        self.status = EntryStatus.TRANSLATED
+
+    def set_reviewer_translation(self, translation: str | None) -> None:
+        """Store a reviewer candidate without replacing the active translation."""
+        self.reviewer_translation = translation or None
+
+    def select_translation_candidate(self, candidate: str) -> None:
+        if candidate == "model":
+            translation = self.model_translation
+        elif candidate == "reviewer":
+            translation = self.reviewer_translation
+        else:
+            raise ValueError(f"Unknown translation candidate: {candidate!r}")
+        if translation is None:
+            raise ValueError(f"No {candidate} translation is available")
+        self.set_translation(translation)
 
     def mark_error(self) -> None:
         self.status = EntryStatus.ERROR

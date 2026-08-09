@@ -8,6 +8,7 @@ from collections.abc import Collection, Sequence
 from PySide6.QtCore import QObject, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from locaforge.domain.document import ProjectDocument
 from locaforge.domain.entry import TranslationEntry
 from locaforge.presentation.translation_filter_proxy import TranslationFilterProxyModel
 from locaforge.presentation.translation_table_model import TranslationTableModel
@@ -43,11 +45,27 @@ class TranslationFilterController(QObject):
         self._proxy_model = proxy_model
         self._issue_entry_ids: frozenset[str] = frozenset()
 
+        self.document = QComboBox(parent)
+        self.document.setToolTip("Show entries from all files or one project file")
+        self.document.addItem("All files", None)
+
         self.search = QLineEdit(parent)
         self.search.setPlaceholderText(
             "Search key, source, translation, or context (Ctrl+F)"
         )
         self.search.textChanged.connect(self._set_search_filter)
+        self.document.currentIndexChanged.connect(self._apply_document_filter)
+        self.search_field = QComboBox(parent)
+        for label, value in (
+            ("All fields", "all"),
+            ("Key", "key"),
+            ("Source", "source"),
+            ("Translation", "translation"),
+            ("Context", "context"),
+        ):
+            self.search_field.addItem(label, value)
+        self.search_field.setToolTip("Choose which field is searched")
+        self.search_field.currentIndexChanged.connect(self._apply_search_field)
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(150)
@@ -90,6 +108,8 @@ class TranslationFilterController(QObject):
         self._update_controls()
 
     def add_to_layout(self, layout: QHBoxLayout) -> None:
+        layout.addWidget(self.document)
+        layout.addWidget(self.search_field)
         layout.addWidget(self.search)
         layout.addWidget(self.status_button)
         layout.addWidget(self.issues_button)
@@ -97,6 +117,7 @@ class TranslationFilterController(QObject):
         layout.addWidget(self.result_count)
 
     def clear(self) -> None:
+        self.document.setCurrentIndex(0)
         self.search.clear()
         self._search_timer.stop()
         self._apply_search_filter()
@@ -142,6 +163,18 @@ class TranslationFilterController(QObject):
         self.refresh_result_count()
         self._update_controls()
 
+    def update_documents(self, documents: Sequence[ProjectDocument]) -> None:
+        selected_id = self.document.currentData()
+        self.document.blockSignals(True)
+        self.document.clear()
+        self.document.addItem("All files", None)
+        for document in documents:
+            self.document.addItem(document.name, document.id)
+        selected_index = self.document.findData(selected_id)
+        self.document.setCurrentIndex(max(0, selected_index))
+        self.document.blockSignals(False)
+        self._apply_document_filter()
+
     def refresh_result_count(self) -> None:
         self.result_count.setText(
             f"{self._proxy_model.rowCount()} / {self._source_model.rowCount()} entries"
@@ -157,6 +190,9 @@ class TranslationFilterController(QObject):
 
     def _apply_search_filter(self) -> None:
         self._proxy_model.set_search_text(self.search.text())
+
+    def _apply_search_field(self) -> None:
+        self._proxy_model.set_search_field(str(self.search_field.currentData()))
 
     def _status_filter_changed(self, selected: bool) -> None:
         del selected
@@ -174,9 +210,17 @@ class TranslationFilterController(QObject):
         self._proxy_model.set_issue_entry_ids(self._issue_entry_ids if enabled else None)
         self._update_controls()
 
+    def _apply_document_filter(self) -> None:
+        document_id = self.document.currentData()
+        self._proxy_model.set_document_id(
+            document_id if isinstance(document_id, str) else None
+        )
+        self._update_controls()
+
     def _update_controls(self) -> None:
         has_filters = (
-            bool(self.search.text().strip())
+            self.document.currentData() is not None
+            or bool(self.search.text().strip())
             or any(action.isChecked() for action in self._status_actions.values())
             or self.issues_button.isChecked()
         )

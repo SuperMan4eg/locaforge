@@ -37,6 +37,7 @@ class CreateProjectFromJson:
         project = self._json_importer.import_file(
             source_path, source_language, target_language, field_mapping
         )
+        project.configure_single_document(source_path, "json")
         session = self._project_container.create(
             {
                 "project_id": project.id,

@@ -97,7 +97,8 @@ class OllamaClient:
         prompt = (
             f"{review_instructions}\n\n"
             f"Review translations from {request.source_language} to {request.target_language}. "
-            "Return only JSON: {\"reviews\":[{\"entry_id\":\"...\",\"issue\":null|\"reason\"}]}. "
+            "Return only JSON: {\"reviews\":[{\"entry_id\":\"...\","
+            "\"issue\":null|\"reason\",\"suggested_translation\":null|\"corrected text\"}]}. "
             "Report only clear meaning, terminology, or completeness errors.\n\n"
             + json.dumps(
                 [
@@ -133,7 +134,16 @@ class OllamaClient:
             issue = item.get("issue")
             if issue is not None and not isinstance(issue, str):
                 raise InvalidModelResponseError("Review issue must be a string or null")
-            results.append(ReviewResult(item["entry_id"], issue))
+            suggested_translation = item.get("suggested_translation")
+            if suggested_translation is not None and not isinstance(
+                suggested_translation, str
+            ):
+                raise InvalidModelResponseError(
+                    "Review suggested_translation must be a string or null"
+                )
+            results.append(
+                ReviewResult(item["entry_id"], issue, suggested_translation)
+            )
         return ReviewResponse(tuple(results))
 
     def _request_json(

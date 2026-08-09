@@ -24,6 +24,7 @@ class ReviewRequest:
 class ReviewResult:
     entry_id: str
     issue: str | None
+    suggested_translation: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

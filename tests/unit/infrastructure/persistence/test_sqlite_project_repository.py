@@ -1,3 +1,5 @@
+import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -34,6 +36,52 @@ def test_create_and_get_restores_a_project(tmp_path: Path) -> None:
     repository.create(project)
 
     assert repository.get(project.id) == project
+
+
+def test_opening_legacy_database_adds_document_support(tmp_path: Path) -> None:
+    database_path = tmp_path / "legacy.db"
+    with sqlite3.connect(database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE projects (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, source_language TEXT NOT NULL,
+                target_language TEXT NOT NULL, source_document TEXT NOT NULL,
+                model_settings TEXT NOT NULL DEFAULT '{}', dirty INTEGER NOT NULL
+            );
+            CREATE TABLE entries (
+                id TEXT PRIMARY KEY, project_id TEXT NOT NULL, row_order INTEGER NOT NULL,
+                key_path TEXT NOT NULL, source TEXT NOT NULL, entry_key TEXT,
+                translation TEXT, status TEXT NOT NULL, locked INTEGER NOT NULL,
+                context TEXT, max_length INTEGER, placeholders TEXT NOT NULL
+            );
+            """
+        )
+        connection.execute(
+            "INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("old", "Legacy", "en", "ru", json.dumps({"hello": "Hello"}), "{}", 0),
+        )
+        connection.execute(
+            "INSERT INTO entries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "entry-1",
+                "old",
+                0,
+                json.dumps(["hello"]),
+                "Hello",
+                None,
+                None,
+                "untranslated",
+                0,
+                None,
+                None,
+                "[]",
+            ),
+        )
+
+    restored = SQLiteProjectRepository(database_path).get("old")
+
+    assert restored.documents[0].source_format == "legacy"
+    assert restored.entries[0].document_id == restored.documents[0].id
 
 
 def test_update_entry_persists_the_change_and_marks_project_dirty(tmp_path: Path) -> None:

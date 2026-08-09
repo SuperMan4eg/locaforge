@@ -32,6 +32,7 @@ class CreateProjectFromCsv:
         project = self._csv_importer.import_file(
             source_path, source_language, target_language, field_mapping
         )
+        project.configure_single_document(source_path, "csv")
         session = self._project_container.create(
             {
                 "project_id": project.id,

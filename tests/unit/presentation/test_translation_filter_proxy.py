@@ -65,6 +65,19 @@ def test_proxy_filters_by_entry_context() -> None:
     assert proxy.data(proxy.index(0, 0)) == "menu/exit"
 
 
+def test_proxy_limits_text_search_to_selected_field() -> None:
+    application = QApplication.instance() or QApplication([])
+    proxy = make_proxy()
+
+    proxy.set_search_field("source")
+    proxy.set_search_text("menu")
+    assert proxy.rowCount() == 0
+
+    proxy.set_search_field("context")
+    assert application is not None
+    assert proxy.rowCount() == 1
+
+
 def test_proxy_filters_by_validation_issue_entry_ids() -> None:
     application = QApplication.instance() or QApplication([])
     proxy = make_proxy()
@@ -86,6 +99,21 @@ def test_proxy_combines_issue_and_status_filters() -> None:
 
     proxy.set_issue_entry_ids({"one", "two"})
     proxy.set_status("translated")
+
+    assert application is not None
+    assert proxy.rowCount() == 1
+    assert proxy.data(proxy.index(0, 0)) == "menu/exit"
+
+
+def test_proxy_filters_by_project_document() -> None:
+    application = QApplication.instance() or QApplication([])
+    proxy = make_proxy()
+    source = proxy.sourceModel()
+    assert isinstance(source, TranslationTableModel)
+    source.entry_at(0).document_id = "menus"
+    source.entry_at(1).document_id = "dialogs"
+
+    proxy.set_document_id("dialogs")
 
     assert application is not None
     assert proxy.rowCount() == 1

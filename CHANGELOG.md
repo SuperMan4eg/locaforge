@@ -2,6 +2,25 @@
 
 All notable changes to LocaForge are documented in this file.
 
+## 0.3.0 — 2026-08-09
+
+### Added
+
+- Multi-file `.lfproj` projects, mixed-format batch import, per-file filtering,
+  document statistics, and transactional batch export with original file names.
+- Separate translation-model and reviewer candidates with explicit version selection.
+- Operation-level translation undo with `Ctrl+Z`, including batch state, candidate,
+  status, and validation restoration across project reopen.
+- Field-scoped table search, comprehensive button tooltips, a Models menu, and a
+  detailed project-creation summary dialog.
+
+### Changed
+
+- Upgraded the `.lfproj` container metadata to format version 2 while retaining
+  automatic opening and migration of version 1 containers and legacy SQLite schemas.
+- Extended the Ollama reviewer contract with an optional corrected translation while
+  remaining compatible with issue-only reviewer responses.
+
 ## 0.2.0 — 2026-08-05
 
 ### Added

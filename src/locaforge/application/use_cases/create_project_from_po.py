@@ -32,6 +32,7 @@ class CreateProjectFromPo:
         project = self._po_importer.import_file(
             source_path, source_language, target_language
         )
+        project.configure_single_document(source_path, "po")
         session = self._project_container.create(
             {
                 "project_id": project.id,

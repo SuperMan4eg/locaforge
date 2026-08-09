@@ -40,3 +40,11 @@ class ProjectExplorerController(QObject):
         self._view.addItem(f"Errors: {statistics.error_entries}")
         self._view.addItem(f"Validation issues: {statistics.entries_with_issues}")
         self._view.addItem(f"Locked: {statistics.locked_entries}")
+        self._view.addItem(f"Files ({len(project.documents)}):")
+        for document in project.documents:
+            entries = [entry for entry in project.entries if entry.document_id == document.id]
+            translated = sum(entry.translation is not None for entry in entries)
+            self._view.addItem(
+                f"  {document.name} [{document.source_format.upper()}] — "
+                f"{translated}/{len(entries)} translated"
+            )

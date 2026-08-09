@@ -40,7 +40,7 @@ class ReviewTranslations:
                 review_prompt,
             )
         )
-        reviewed = {result.entry_id: result.issue for result in response.results}
+        reviewed = {result.entry_id: result for result in response.results}
         existing_by_entry: dict[str, list[ValidationIssue]] = {}
         for validation_issue in self._repository.list_validation_issues(project_id):
             if validation_issue.code is ValidationCode.AI_REVIEW:
@@ -50,7 +50,12 @@ class ReviewTranslations:
             )
         for entry in entries:
             existing = tuple(existing_by_entry.get(entry.id, ()))
-            issue = reviewed.get(entry.id)
+            result = reviewed.get(entry.id)
+            issue = result.issue if result is not None else None
+            entry.set_reviewer_translation(
+                result.suggested_translation if result is not None else None
+            )
+            self._repository.update_entry(project_id, entry)
             review_issue = (
                 (ValidationIssue(ValidationCode.AI_REVIEW, issue),) if issue else ()
             )
@@ -61,4 +66,8 @@ class ReviewTranslations:
             )
         if entries:
             self._repository.mark_project_dirty(project_id)
-        return sum(reviewed.get(entry.id) is not None for entry in entries)
+        return sum(
+            reviewed.get(entry.id) is not None
+            and reviewed[entry.id].issue is not None
+            for entry in entries
+        )

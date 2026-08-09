@@ -22,12 +22,20 @@ class TranslationFilterProxyModel(QSortFilterProxyModel):
     def __init__(self) -> None:
         super().__init__()
         self._search_text = ""
+        self._search_field = "all"
         self._statuses: frozenset[str] = frozenset()
+        self._document_id: str | None = None
         self._issue_entry_ids: frozenset[str] | None = None
         self.setDynamicSortFilter(True)
 
     def set_search_text(self, text: str) -> None:
         self._search_text = text.strip().casefold()
+        self._invalidate_rows()
+
+    def set_search_field(self, field: str) -> None:
+        if field not in {"all", "key", "source", "translation", "context"}:
+            raise ValueError(f"Unsupported search field: {field!r}")
+        self._search_field = field
         self._invalidate_rows()
 
     def set_status(self, status: str | None) -> None:
@@ -39,6 +47,10 @@ class TranslationFilterProxyModel(QSortFilterProxyModel):
 
     def set_issue_entry_ids(self, entry_ids: Collection[str] | None) -> None:
         self._issue_entry_ids = None if entry_ids is None else frozenset(entry_ids)
+        self._invalidate_rows()
+
+    def set_document_id(self, document_id: str | None) -> None:
+        self._document_id = document_id
         self._invalidate_rows()
 
     def _invalidate_rows(self) -> None:
@@ -54,6 +66,10 @@ class TranslationFilterProxyModel(QSortFilterProxyModel):
         if source_model is None:
             return False
         translation_model = cast(TranslationTableModel, source_model)
+        if self._document_id is not None:
+            entry = translation_model.entry_at(source_row)
+            if entry.document_id != self._document_id:
+                return False
         if self._issue_entry_ids is not None:
             entry = translation_model.entry_at(source_row)
             if entry.id not in self._issue_entry_ids:
@@ -64,14 +80,17 @@ class TranslationFilterProxyModel(QSortFilterProxyModel):
                 return False
         if not self._search_text:
             return True
-        searchable_values = (
-            source_model.data(source_model.index(source_row, column, source_parent))
-            for column in range(3)
+        entry = translation_model.entry_at(source_row)
+        values = {
+            "key": source_model.data(source_model.index(source_row, 0, source_parent)),
+            "source": source_model.data(source_model.index(source_row, 1, source_parent)),
+            "translation": source_model.data(source_model.index(source_row, 2, source_parent)),
+            "context": entry.context or "",
+        }
+        selected_values = values.values() if self._search_field == "all" else (
+            values[self._search_field],
         )
-        context = translation_model.entry_at(source_row).context or ""
-        return self._search_text in context.casefold() or any(
-            self._search_text in str(value).casefold() for value in searchable_values
-        )
+        return any(self._search_text in str(value).casefold() for value in selected_values)
 
     def lessThan(
         self,
