@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+import os
+import tempfile
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from locaforge.application.dto.project import ExportPreflight, ProjectStatistics
 from locaforge.application.dto.review import ReviewBatchResult
 from locaforge.application.dto.translation import BatchResult
-from locaforge.application.dto.validation import EntryValidationIssue, ProjectValidationResult
+from locaforge.application.dto.validation import (
+    EntryValidationIssue,
+    ProjectValidationResult,
+    ValidationIssue,
+)
 from locaforge.application.errors import ModelUnavailableError, NoOpenProjectError
 from locaforge.application.ports.csv_format import (
     CsvExporter,
@@ -78,6 +84,7 @@ from locaforge.domain.translation_memory import (
 
 type ProgressCallback = Callable[[int, int], None]
 type CancellationCheck = Callable[[], bool]
+type ImportFieldMapping = JsonFieldMapping | CsvFieldMapping | XmlFieldMapping | None
 
 
 def _ignore_progress(completed: int, total: int) -> None:
@@ -238,6 +245,100 @@ class ProjectWorkspace:
         self._session = created.session
         return self._project
 
+    def create_from_files(
+        self,
+        source_paths: Sequence[Path],
+        destination: Path,
+        source_language: str,
+        target_language: str,
+        field_mappings: Mapping[Path, ImportFieldMapping] | None = None,
+    ) -> Project:
+        """Create one project from multiple localization files as a single transaction."""
+        if not source_paths:
+            raise ValueError("Select at least one source file")
+        if destination.suffix.lower() != ".lfproj":
+            raise ValueError("Project destination must use the .lfproj extension")
+        normalized_paths = tuple(Path(path) for path in source_paths)
+        source_names = [path.name.casefold() for path in normalized_paths]
+        if len(source_names) != len(set(source_names)):
+            raise ValueError("Imported files must have unique names")
+        mappings = field_mappings or {}
+        imported_projects = [
+            self._import_source_file(
+                path,
+                source_language,
+                target_language,
+                mappings.get(path),
+            )
+            for path in normalized_paths
+        ]
+        project = imported_projects[0]
+        for imported in imported_projects[1:]:
+            project.documents.extend(imported.documents)
+            project.entries.extend(imported.entries)
+        project.name = destination.stem
+        project.dirty = False
+        session = self._project_container.create(
+            {
+                "project_id": project.id,
+                "project_name": project.name,
+                "source_files": [path.name for path in normalized_paths],
+                "source_format": "multiple",
+                "source_language": source_language,
+                "target_language": target_language,
+            }
+        )
+        repository = self._repository_factory.create(session.database_path)
+        repository.create(project)
+        self._project_container.save(session, destination)
+        self._project = project
+        self._session = session
+        return project
+
+    def _import_source_file(
+        self,
+        path: Path,
+        source_language: str,
+        target_language: str,
+        field_mapping: ImportFieldMapping,
+    ) -> Project:
+        suffix = path.suffix.lower()
+        if suffix == ".json":
+            json_mapping = (
+                field_mapping if isinstance(field_mapping, JsonFieldMapping) else None
+            )
+            project = self._json_importer.import_file(
+                path, source_language, target_language, json_mapping
+            )
+            project.configure_single_document(path, "json")
+            return project
+        if suffix in {".csv", ".tsv"}:
+            if self._csv_importer is None or not isinstance(field_mapping, CsvFieldMapping):
+                raise ValueError(f"CSV field mapping is required for {path.name!r}")
+            project = self._csv_importer.import_file(
+                path, source_language, target_language, field_mapping
+            )
+            project.configure_single_document(path, "csv")
+            return project
+        if suffix == ".po":
+            if self._po_importer is None:
+                raise RuntimeError("PO import support is not configured")
+            project = self._po_importer.import_file(path, source_language, target_language)
+            project.configure_single_document(path, "po")
+            return project
+        if suffix == ".xml":
+            if self._xml_importer is None:
+                raise RuntimeError("XML import support is not configured")
+            xml_mapping = (
+                field_mapping if isinstance(field_mapping, XmlFieldMapping) else None
+            )
+            project = self._xml_importer.import_file(
+                path, source_language, target_language, xml_mapping
+            )
+            project.configure_single_document(path, "xml")
+            return project
+        raise ValueError(f"Unsupported localization file format: {path.suffix or path.name}")
+
     def inspect_xml_attribute_names(self, path: Path) -> tuple[str, ...]:
         if self._xml_importer is None:
             raise RuntimeError("XML import support is not configured")
@@ -258,6 +359,23 @@ class ProjectWorkspace:
         )
         self._replace_entry(entry)
         return entry
+
+    def select_translation_candidate(
+        self, entry_id: str, candidate: str
+    ) -> TranslationEntry:
+        entry = self.project.get_entry(entry_id)
+        translation = (
+            entry.model_translation
+            if candidate == "model"
+            else entry.reviewer_translation
+            if candidate == "reviewer"
+            else None
+        )
+        if candidate not in {"model", "reviewer"}:
+            raise ValueError(f"Unknown translation candidate: {candidate!r}")
+        if translation is None:
+            raise ValueError(f"No {candidate} translation is available")
+        return self.edit_translation(entry_id, translation)
 
     def replace_translations(
         self, search_text: str, replacement_text: str
@@ -297,7 +415,8 @@ class ProjectWorkspace:
     ) -> ReviewBatchResult:
         if self._llm_client is None:
             raise ModelUnavailableError("No LLM backend is configured")
-        reviewer = ReviewTranslations(self._repository(), self._llm_client)
+        repository = self._repository()
+        reviewer = ReviewTranslations(repository, self._llm_client)
         settings = self.project.model_settings
         report_progress = progress_callback or _ignore_progress
         is_cancelled = cancellation_check or _never_cancel
@@ -307,7 +426,7 @@ class ProjectWorkspace:
         for offset in range(0, len(entry_ids), settings.batch_size):
             if is_cancelled():
                 if reviewed_entries:
-                    self.project.dirty = True
+                    self._reload(repository)
                 return ReviewBatchResult(reviewed_entries, issue_count, True)
             batch_entry_ids = entry_ids[offset : offset + settings.batch_size]
             issue_count += reviewer.execute(
@@ -320,7 +439,7 @@ class ProjectWorkspace:
             reviewed_entries += len(batch_entry_ids)
             report_progress(reviewed_entries, len(entry_ids))
         if reviewed_entries:
-            self.project.dirty = True
+            self._reload(repository)
         return ReviewBatchResult(reviewed_entries, issue_count)
 
     def dismiss_ai_review_issue(self, entry_id: str) -> None:
@@ -546,6 +665,63 @@ class ProjectWorkspace:
             self.session, destination
         )
 
+    def export_all_documents(self, destination_directory: Path) -> tuple[Path, ...]:
+        """Export every project document using its original format and relative path."""
+        destination_directory.parent.mkdir(parents=True, exist_ok=True)
+        exported_relative_paths: list[Path] = []
+        with tempfile.TemporaryDirectory(
+            prefix=".locaforge-export-", dir=destination_directory.parent
+        ) as temporary_name:
+            temporary_directory = Path(temporary_name)
+            for document in self.project.documents:
+                relative_path = Path(document.source_path)
+                if relative_path.is_absolute() or ".." in relative_path.parts:
+                    raise ValueError(
+                        f"Document {document.name!r} has an unsafe export path"
+                    )
+                document_project = Project(
+                    id=self.project.id,
+                    name=document.name,
+                    source_language=self.project.source_language,
+                    target_language=self.project.target_language,
+                    entries=[
+                        entry
+                        for entry in self.project.entries
+                        if entry.document_id == document.id
+                    ],
+                    source_document=document.source_document,
+                    model_settings=self.project.model_settings,
+                    documents=[document],
+                )
+                staged_path = temporary_directory / relative_path
+                self._export_document(document_project, document.source_format, staged_path)
+                exported_relative_paths.append(relative_path)
+
+            destination_directory.mkdir(parents=True, exist_ok=True)
+            for relative_path in exported_relative_paths:
+                staged_path = temporary_directory / relative_path
+                destination_path = destination_directory / relative_path
+                destination_path.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(staged_path, destination_path)
+        return tuple(destination_directory / path for path in exported_relative_paths)
+
+    def _export_document(
+        self, project: Project, source_format: str, destination: Path
+    ) -> None:
+        if source_format == "json":
+            self._json_exporter.export_file(project, destination)
+            return
+        if source_format == "po" and self._po_exporter is not None:
+            self._po_exporter.export_file(project, destination)
+            return
+        if source_format == "csv" and self._csv_exporter is not None:
+            self._csv_exporter.export_file(project, destination)
+            return
+        if source_format == "xml" and self._xml_exporter is not None:
+            self._xml_exporter.export_file(project, destination)
+            return
+        raise ValueError(f"Unsupported project document format: {source_format!r}")
+
     @property
     def source_format(self) -> str | None:
         source_format = self.session.metadata.get("source_format")
@@ -639,6 +815,16 @@ class ProjectWorkspace:
         if self._llm_client is None:
             raise ModelUnavailableError("No LLM backend is configured")
         repository = self._repository()
+        previous_entries = {
+            entry_id: repository.get_entry(self.project.id, entry_id)
+            for entry_id in entry_ids
+        }
+        previous_issues: dict[str, list[ValidationIssue]] = {}
+        for issue in repository.list_validation_issues(self.project.id):
+            if issue.entry_id in previous_entries:
+                previous_issues.setdefault(issue.entry_id, []).append(
+                    ValidationIssue(issue.code, issue.message)
+                )
         settings = self.project.model_settings
         selected_model = model or settings.model
         translated_entry_ids: list[str] = []
@@ -680,6 +866,12 @@ class ProjectWorkspace:
                 break
             completed_entries += len(batch_entry_ids)
             report_progress(completed_entries, total_entries)
+        changed_entry_ids = tuple(dict.fromkeys(translated_entry_ids))
+        repository.record_translation_operation(
+            self.project.id,
+            tuple(previous_entries[entry_id] for entry_id in changed_entry_ids),
+            previous_issues,
+        )
         self._reload(repository)
         return BatchResult(
             tuple(translated_entry_ids),
@@ -687,6 +879,17 @@ class ProjectWorkspace:
             tuple(errors),
             cancelled,
         )
+
+    def can_undo_last_translation(self) -> bool:
+        return self._repository().has_undoable_translation_operation(self.project.id)
+
+    def undo_last_translation(self) -> tuple[TranslationEntry, ...]:
+        repository = self._repository()
+        restored = repository.undo_last_translation_operation(self.project.id)
+        if not restored:
+            raise ValueError("There is no translation operation to undo")
+        self._reload(repository)
+        return restored
 
     def _repository(self) -> ProjectRepository:
         return self._repository_factory.create(self.session.database_path)

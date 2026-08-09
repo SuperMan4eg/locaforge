@@ -52,7 +52,7 @@ job starts the packaged executable in smoke-test mode on every push and pull req
 1. Update `pyproject.toml`, `README.md`, and `CHANGELOG.md` for the release.
 2. Merge the release changes into `main` and ensure CI is green.
 3. Create and push an annotated tag matching the package version, for example
-   `v0.2.0`.
+   `v0.3.0`.
 4. CI verifies the tag/version match, downloads the build artifacts, creates
    `SHA256SUMS.txt`, and publishes the GitHub Release.
 

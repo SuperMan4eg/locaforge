@@ -15,7 +15,16 @@ class WorkspaceStub:
     def __init__(self, has_project: bool) -> None:
         self.has_project = has_project
         self.project = SimpleNamespace(
-            name="Demo", source_language="en", target_language="ru"
+            name="Demo",
+            source_language="en",
+            target_language="ru",
+            documents=(
+                SimpleNamespace(id="doc-1", name="strings.json", source_format="json"),
+            ),
+            entries=(
+                SimpleNamespace(document_id="doc-1", translation="Перевод"),
+                SimpleNamespace(document_id="doc-1", translation=None),
+            ),
         )
 
     def project_statistics(self) -> ProjectStatistics:
@@ -51,4 +60,6 @@ def test_explorer_renders_project_statistics() -> None:
         "Errors: 1",
         "Validation issues: 3",
         "Locked: 2",
+        "Files (1):",
+        "  strings.json [JSON] — 1/2 translated",
     ]

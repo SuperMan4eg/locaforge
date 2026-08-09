@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from locaforge.application.dto.review import ReviewResponse, ReviewResult
 from locaforge.application.dto.translation import (
     TranslationRequest,
     TranslationResponse,
@@ -40,6 +41,14 @@ class StubLlmClient:
         return TranslationResponse(
             tuple(
                 TranslationResult(item.entry_id, f"Translated {item.source}")
+                for item in request.entries
+            )
+        )
+
+    def review(self, request):
+        return ReviewResponse(
+            tuple(
+                ReviewResult(item.entry_id, "Improve wording", "Reviewer version")
                 for item in request.entries
             )
         )
@@ -156,6 +165,84 @@ def test_workspace_lists_only_untranslated_entry_ids(tmp_path: Path) -> None:
     workspace.edit_translation(project.entries[0].id, "Первый")
 
     assert workspace.untranslated_entry_ids() == (project.entries[1].id,)
+
+
+def test_workspace_can_select_model_or_reviewer_translation(tmp_path: Path) -> None:
+    source_path = tmp_path / "dialog.json"
+    source_path.write_text('{"text": "Hello"}', encoding="utf-8")
+    workspace = make_workspace(tmp_path, StubLlmClient())
+    project = workspace.create_from_json(
+        source_path, tmp_path / "dialog.lfproj", "en", "ru"
+    )
+    entry_id = project.entries[0].id
+    workspace.translate_entries((entry_id,))
+    workspace.review_entries((entry_id,))
+
+    selected = workspace.select_translation_candidate(entry_id, "reviewer")
+
+    assert selected.translation == "Reviewer version"
+    assert selected.model_translation == "Translated Hello"
+    assert selected.reviewer_translation == "Reviewer version"
+    assert selected.status is EntryStatus.NEEDS_REVIEW
+
+
+def test_workspace_undoes_a_whole_translation_batch_and_restores_qa(tmp_path: Path) -> None:
+    source_path = tmp_path / "dialog.json"
+    source_path.write_text(
+        '{"first": "First", "second": "Second"}', encoding="utf-8"
+    )
+    workspace = make_workspace(tmp_path, StubLlmClient())
+    project = workspace.create_from_json(
+        source_path, tmp_path / "dialog.lfproj", "en", "ru"
+    )
+    first_id, second_id = (entry.id for entry in project.entries)
+    workspace.edit_translation(first_id, "")
+    issues_before = workspace.validation_issues()
+
+    workspace.translate_entries((first_id, second_id))
+    restored = workspace.undo_last_translation()
+
+    assert {entry.id for entry in restored} == {first_id, second_id}
+    assert workspace.project.get_entry(first_id).translation == ""
+    assert workspace.project.get_entry(first_id).status is EntryStatus.ERROR
+    assert workspace.project.get_entry(second_id).translation is None
+    assert workspace.project.get_entry(second_id).status is EntryStatus.UNTRANSLATED
+    assert workspace.validation_issues() == issues_before
+    assert workspace.can_undo_last_translation() is False
+
+
+def test_translation_undo_survives_save_and_reopen(tmp_path: Path) -> None:
+    source_path = tmp_path / "dialog.json"
+    source_path.write_text('{"text": "Hello"}', encoding="utf-8")
+    project_path = tmp_path / "dialog.lfproj"
+    workspace = make_workspace(tmp_path, StubLlmClient())
+    project = workspace.create_from_json(source_path, project_path, "en", "ru")
+    workspace.translate_entries((project.entries[0].id,))
+    workspace.save()
+
+    reopened = make_workspace(tmp_path / "reopened", StubLlmClient())
+    reopened.open(project_path)
+    reopened.undo_last_translation()
+
+    assert reopened.project.entries[0].translation is None
+    assert reopened.project.entries[0].model_translation is None
+
+
+def test_later_manual_edit_disables_translation_undo(tmp_path: Path) -> None:
+    source_path = tmp_path / "dialog.json"
+    source_path.write_text('{"text": "Hello"}', encoding="utf-8")
+    workspace = make_workspace(tmp_path, StubLlmClient())
+    project = workspace.create_from_json(
+        source_path, tmp_path / "dialog.lfproj", "en", "ru"
+    )
+    entry_id = project.entries[0].id
+    workspace.translate_entries((entry_id,))
+    workspace.edit_translation(entry_id, "Manual edit")
+
+    assert workspace.can_undo_last_translation() is False
+    with pytest.raises(ValueError, match="edited later"):
+        workspace.undo_last_translation()
+    assert workspace.project.get_entry(entry_id).translation == "Manual edit"
 
 
 def test_workspace_lists_only_unlocked_needs_review_entries(tmp_path: Path) -> None:

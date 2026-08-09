@@ -39,7 +39,7 @@ def test_save_then_open_restores_working_project(tmp_path: Path) -> None:
 
     restored = SQLiteProjectRepository(opened_session.database_path).get("project-1")
     assert restored.entries[0].source == "Hello"
-    assert opened_session.metadata == {"project_name": "Dialog", "format_version": 1}
+    assert opened_session.metadata == {"project_name": "Dialog", "format_version": 2}
     assert opened_session.container_path == destination
 
 
@@ -64,6 +64,22 @@ def test_saving_snapshot_restores_working_project_without_creating_backup(tmp_pa
 
     assert SQLiteProjectRepository(opened_session.database_path).get("project-1").name == "Dialog"
     assert not destination.with_suffix(".lfproj.bak").exists()
+
+
+def test_open_upgrades_version_one_container_metadata(tmp_path: Path) -> None:
+    _, session = create_project_session(tmp_path)
+    legacy_container = tmp_path / "legacy.lfproj"
+    with zipfile.ZipFile(legacy_container, "w") as archive:
+        archive.write(session.database_path, "project.db")
+        archive.writestr(
+            "metadata.json",
+            '{"format_version": 1, "project_id": "project-1"}',
+        )
+
+    opened = LfprojContainer(tmp_path / "opened").open(legacy_container)
+
+    assert opened.metadata["format_version"] == 2
+    assert SQLiteProjectRepository(opened.database_path).get("project-1").name == "Dialog"
 
 
 def test_open_rejects_container_without_project_database(tmp_path: Path) -> None:

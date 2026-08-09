@@ -44,7 +44,15 @@ def test_main_window_composes_all_docks_and_menus(tmp_path: Path) -> None:
             "Translation Memory",
             "Glossary",
         }
-        assert menu_titles == {"&File", "&Review", "&Navigate", "&Tools", "&View"}
+        assert menu_titles == {
+            "&File",
+            "&Edit",
+            "&Review",
+            "&Models",
+            "&Navigate",
+            "&Tools",
+            "&View",
+        }
     finally:
         window.close()
         application.processEvents()
@@ -85,6 +93,8 @@ def test_main_window_renders_preloaded_project(tmp_path: Path) -> None:
             "en -> ru",
             "Progress: 0% (0/2)",
         ]
+        assert "Files (1):" in explorer_lines
+        assert any("dialog.json [JSON]" in line for line in explorer_lines)
         assert window._table.currentIndex().isValid()
         assert window._source_editor.toPlainText() == "Hello"
     finally:

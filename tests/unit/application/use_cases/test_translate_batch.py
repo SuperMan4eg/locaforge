@@ -147,7 +147,9 @@ def test_translates_eligible_entries_and_skips_locked_or_approved(tmp_path: Path
     assert result.translated_entry_ids == ("entry-1",)
     assert result.skipped_entry_ids == ("entry-2", "entry-3")
     assert not result.errors
-    assert repository.get_entry("project-1", "entry-1").status is EntryStatus.TRANSLATED
+    translated_entry = repository.get_entry("project-1", "entry-1")
+    assert translated_entry.status is EntryStatus.TRANSLATED
+    assert translated_entry.model_translation == translated_entry.translation
 
 
 def test_reuses_one_model_translation_for_identical_source_and_context(

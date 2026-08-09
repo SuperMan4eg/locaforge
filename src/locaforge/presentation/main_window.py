@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from locaforge.application.dto.validation import ValidationCode
-from locaforge.application.project_workspace import ProjectWorkspace
+from locaforge.application.project_workspace import ImportFieldMapping, ProjectWorkspace
 from locaforge.domain.entry import EntryStatus, TranslationEntry
 from locaforge.domain.settings import ModelSettings
 from locaforge.presentation.autosave_controller import AutosaveController
@@ -46,6 +46,7 @@ from locaforge.presentation.model_settings_profile import ModelSettingsProfileSt
 from locaforge.presentation.ollama_settings_dialog import OllamaSettingsDialog
 from locaforge.presentation.project_explorer_controller import ProjectExplorerController
 from locaforge.presentation.project_io_controller import ProjectIoController
+from locaforge.presentation.project_setup_dialog import ProjectSetupDialog
 from locaforge.presentation.quality_panel_controller import QualityPanelController
 from locaforge.presentation.recent_projects import RecentProjectsStore
 from locaforge.presentation.recent_projects_controller import RecentProjectsController
@@ -122,6 +123,26 @@ class MainWindow(QMainWindow):
         self._source_editor = QPlainTextEdit(self)
         self._source_editor.setReadOnly(True)
         self._translation_editor = QPlainTextEdit(self)
+        self._model_candidate = QPlainTextEdit(self)
+        self._model_candidate.setReadOnly(True)
+        self._model_candidate.setPlaceholderText("No translation-model version")
+        self._reviewer_candidate = QPlainTextEdit(self)
+        self._reviewer_candidate.setReadOnly(True)
+        self._reviewer_candidate.setPlaceholderText("No reviewer suggestion")
+        self._use_model_candidate_button = QPushButton("Use model version", self)
+        self._use_model_candidate_button.setToolTip(
+            "Make the translation model's version the active translation"
+        )
+        self._use_model_candidate_button.clicked.connect(
+            lambda: self._select_translation_candidate("model")
+        )
+        self._use_reviewer_candidate_button = QPushButton("Use reviewer version", self)
+        self._use_reviewer_candidate_button.setToolTip(
+            "Make the reviewer's corrected version the active translation"
+        )
+        self._use_reviewer_candidate_button.clicked.connect(
+            lambda: self._select_translation_candidate("reviewer")
+        )
         self._translation_length = QLabel("Characters: 0", self)
         self._translation_editor.textChanged.connect(self._refresh_translation_length)
         self._current_issues = QLabel("No validation issues", self)
@@ -130,29 +151,42 @@ class MainWindow(QMainWindow):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self._dismiss_ai_issue_button = QPushButton("Dismiss AI issue", self)
+        self._dismiss_ai_issue_button.setToolTip(
+            "Dismiss the AI reviewer issue for the current entry"
+        )
         self._dismiss_ai_issue_button.clicked.connect(self._dismiss_ai_review_issue)
         self._retranslate_button = QPushButton("Re-translate", self)
+        self._retranslate_button.setToolTip("Translate the current entry again with Ollama")
         self._retranslate_button.clicked.connect(self._retranslate_current_entry)
         self._apply_matching_button = QPushButton(
             "Apply to matching source", self
         )
+        self._apply_matching_button.setToolTip(
+            "Apply this translation to every unlocked entry with identical source text"
+        )
         self._apply_matching_button.clicked.connect(self._apply_translation_to_matches)
         self._copy_source_button = QPushButton("Copy source", self)
+        self._copy_source_button.setToolTip("Copy the source text into the translation editor")
         self._copy_source_button.clicked.connect(self._copy_source_to_translation)
         self._apply_button = QPushButton("Apply translation", self)
         self._apply_button.clicked.connect(self._apply_translation)
-        self._apply_button.setToolTip("Ctrl+Enter")
+        self._apply_button.setToolTip("Save the edited translation (Ctrl+Enter)")
         self._approve_button = QPushButton("Approve", self)
+        self._approve_button.setToolTip("Approve or reopen the current translation")
         self._approve_button.clicked.connect(self._toggle_entry_approval)
         self._lock_button = QPushButton("Locked", self)
+        self._lock_button.setToolTip("Prevent or allow changes to the current translation")
         self._lock_button.setCheckable(True)
         self._lock_button.clicked.connect(self._set_entry_locked)
         self._model_name = QLabel("qwen3", self)
         self._settings_button = QPushButton("Settings...", self)
+        self._settings_button.setToolTip("Configure translation and reviewer models")
         self._settings_button.clicked.connect(self._open_ollama_settings)
         self._translate_button = QPushButton("Translate selected", self)
+        self._translate_button.setToolTip("Translate the selected unlocked entries")
         self._translate_button.clicked.connect(self._translate_selected)
         self._cancel_button = QPushButton("Cancel", self)
+        self._cancel_button.setToolTip("Cancel the operation after the current model request")
         self._cancel_button.clicked.connect(self._cancel_translation)
         self._cancel_button.setVisible(False)
         self._progress = QProgressBar(self)
@@ -166,6 +200,18 @@ class MainWindow(QMainWindow):
         form_layout.addRow(QLabel("Translation", self), self._translation_editor)
         form_layout.addRow(QLabel("Length", self), self._translation_length)
         editor_layout.addLayout(form_layout)
+        candidates_layout = QHBoxLayout()
+        model_candidate_layout = QVBoxLayout()
+        model_candidate_layout.addWidget(QLabel("Translation model version", self))
+        model_candidate_layout.addWidget(self._model_candidate)
+        model_candidate_layout.addWidget(self._use_model_candidate_button)
+        reviewer_candidate_layout = QVBoxLayout()
+        reviewer_candidate_layout.addWidget(QLabel("Reviewer version", self))
+        reviewer_candidate_layout.addWidget(self._reviewer_candidate)
+        reviewer_candidate_layout.addWidget(self._use_reviewer_candidate_button)
+        candidates_layout.addLayout(model_candidate_layout)
+        candidates_layout.addLayout(reviewer_candidate_layout)
+        editor_layout.addLayout(candidates_layout)
         editor_layout.addWidget(self._current_issues)
         issue_actions = QHBoxLayout()
         issue_actions.addWidget(self._dismiss_ai_issue_button)
@@ -221,6 +267,9 @@ class MainWindow(QMainWindow):
 
         self._history_list = QListWidget(self)
         self._restore_history_button = QPushButton("Restore revision", self)
+        self._restore_history_button.setToolTip(
+            "Restore the selected earlier translation of the current entry"
+        )
         history_widget = QWidget(self)
         history_layout = QVBoxLayout(history_widget)
         history_layout.addWidget(self._history_list)
@@ -236,6 +285,7 @@ class MainWindow(QMainWindow):
         self._log_view.setReadOnly(True)
         self._log_view.document().setMaximumBlockCount(1_000)
         self._clear_log_button = QPushButton("Clear logs", self)
+        self._clear_log_button.setToolTip("Remove all messages currently shown in the log panel")
         self._clear_log_button.clicked.connect(self._log_view.clear)
         log_widget = QWidget(self)
         log_layout = QVBoxLayout(log_widget)
@@ -249,6 +299,9 @@ class MainWindow(QMainWindow):
 
         self._translation_memory_list = QListWidget(self)
         self._apply_memory_button = QPushButton("Apply TM suggestion", self)
+        self._apply_memory_button.setToolTip(
+            "Use the selected translation-memory suggestion for the current entry"
+        )
         memory_widget = QWidget(self)
         memory_layout = QVBoxLayout(memory_widget)
         memory_layout.addWidget(self._translation_memory_list)
@@ -263,6 +316,10 @@ class MainWindow(QMainWindow):
         self._glossary_remove_button = QPushButton("Remove term", self)
         self._glossary_import_button = QPushButton("Import CSV...", self)
         self._glossary_export_button = QPushButton("Export CSV...", self)
+        self._glossary_add_button.setToolTip("Add a term for the project's language pair")
+        self._glossary_remove_button.setToolTip("Remove the selected glossary term")
+        self._glossary_import_button.setToolTip("Import glossary terms from a CSV file")
+        self._glossary_export_button.setToolTip("Export glossary terms to a CSV file")
         glossary_buttons = QHBoxLayout()
         glossary_buttons.addWidget(self._glossary_add_button)
         glossary_buttons.addWidget(self._glossary_remove_button)
@@ -291,6 +348,11 @@ class MainWindow(QMainWindow):
         self._export_csv_action.triggered.connect(self._export_csv)
         self._export_xml_action = QAction("Export &XML...", self)
         self._export_xml_action.triggered.connect(self._export_xml)
+        self._export_all_action = QAction("Export &all project files...", self)
+        self._export_all_action.setToolTip(
+            "Export every document with its original file name and format"
+        )
+        self._export_all_action.triggered.connect(self._export_all_documents)
         self._build_menu()
 
         self._autosave = AutosaveController(self._workspace.autosave, parent=self)
@@ -410,6 +472,11 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
+        self._import_multiple_action = QAction("Import &multiple files...", self)
+        self._import_multiple_action.setToolTip(
+            "Create one project from several JSON, CSV/TSV, PO, or XML files"
+        )
+        self._import_multiple_action.triggered.connect(self._import_multiple_files)
         self._import_action = QAction("&Import JSON...", self)
         self._import_action.triggered.connect(self._import_json)
         self._import_action.setShortcut(QKeySequence("Ctrl+I"))
@@ -428,6 +495,8 @@ class MainWindow(QMainWindow):
         exit_action = QAction("E&xit", self)
         exit_action.triggered.connect(self.close)
 
+        file_menu.addAction(self._import_multiple_action)
+        file_menu.addSeparator()
         file_menu.addAction(self._import_action)
         file_menu.addAction(self._import_po_action)
         file_menu.addAction(self._import_csv_action)
@@ -451,8 +520,18 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self._export_po_action)
         file_menu.addAction(self._export_csv_action)
         file_menu.addAction(self._export_xml_action)
+        file_menu.addAction(self._export_all_action)
         file_menu.addSeparator()
         file_menu.addAction(exit_action)
+
+        edit_menu = self.menuBar().addMenu("&Edit")
+        self._undo_translation_action = QAction("Undo last translation", self)
+        self._undo_translation_action.setShortcut(QKeySequence.StandardKey.Undo)
+        self._undo_translation_action.setToolTip(
+            "Restore every entry changed by the latest batch translation (Ctrl+Z)"
+        )
+        self._undo_translation_action.triggered.connect(self._undo_last_translation)
+        edit_menu.addAction(self._undo_translation_action)
 
         review_menu = self.menuBar().addMenu("&Review")
         self._select_qa_entries_action = QAction("Select all QA entries", self)
@@ -493,6 +572,18 @@ class MainWindow(QMainWindow):
         review_menu.addSeparator()
         review_menu.addAction(self._lock_selected_action)
         review_menu.addAction(self._unlock_selected_action)
+
+        models_menu = self.menuBar().addMenu("&Models")
+        self._model_settings_action = QAction("Model settings...", self)
+        self._model_settings_action.setToolTip(
+            "Configure the translation model, reviewer model, prompts, and timeouts"
+        )
+        self._model_settings_action.triggered.connect(self._open_ollama_settings)
+        models_menu.addAction(self._model_settings_action)
+        self._model_setup_action = QAction("Download or set up models...", self)
+        self._model_setup_action.setToolTip("Check Ollama and download an installed model")
+        self._model_setup_action.triggered.connect(self._open_ollama_setup)
+        models_menu.addAction(self._model_setup_action)
 
         tools_menu = self.menuBar().addMenu("&Tools")
         self._ollama_setup_action = QAction("Ollama Setup...", self)
@@ -578,6 +669,52 @@ class MainWindow(QMainWindow):
         self._reset_layout_action.triggered.connect(self._reset_window_layout)
         view_menu.addAction(self._reset_layout_action)
 
+    def _import_multiple_files(self) -> None:
+        source_names, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Import localization files",
+            "",
+            "Localization files (*.json *.csv *.tsv *.po *.xml)",
+        )
+        if not source_names:
+            return
+        source_paths = tuple(Path(name) for name in source_names)
+        field_mappings: dict[Path, ImportFieldMapping] = {}
+        for source_path in source_paths:
+            suffix = source_path.suffix.lower()
+            if suffix == ".json":
+                field_mappings[source_path] = self._import_mappings.ask_json(source_path)
+            elif suffix in {".csv", ".tsv"}:
+                mapping = self._import_mappings.ask_csv(source_path)
+                if mapping is None:
+                    return
+                field_mappings[source_path] = mapping
+            elif suffix == ".xml":
+                field_mappings[source_path] = self._import_mappings.ask_xml(source_path)
+        destination_name, _ = QFileDialog.getSaveFileName(
+            self, "Create LocaForge project", "", "LocaForge projects (*.lfproj)"
+        )
+        if not destination_name:
+            return
+        formats = ", ".join(sorted({path.suffix.lower().lstrip(".") for path in source_paths}))
+        languages = self._ask_project_setup(
+            Path(f"{len(source_paths)} selected files"),
+            Path(destination_name),
+            formats,
+            "Each file is stored as a separate project document; field mappings are "
+            "applied per file and original file names are preserved.",
+        )
+        if languages is None or not self._confirm_unsaved_changes():
+            return
+        source_language, target_language = languages
+        self._project_io.create_from_files(
+            source_paths,
+            Path(destination_name),
+            source_language,
+            target_language,
+            field_mappings,
+        )
+
     def _import_json(self) -> None:
         source_name, _ = QFileDialog.getOpenFileName(
             self, "Import JSON", "", "JSON files (*.json)"
@@ -590,12 +727,20 @@ class MainWindow(QMainWindow):
         )
         if not destination_name:
             return
-        source_language = self._ask_language("Source language", "en")
-        if source_language is None:
+        mapping_description = (
+            "Automatic: every string value is translated and its JSON path is used as the key"
+            if field_mapping is None
+            else (
+                f"Source: {field_mapping.source_field}; target: {field_mapping.target_field}; "
+                f"key: {field_mapping.key_field or 'generated JSON path'}"
+            )
+        )
+        languages = self._ask_project_setup(
+            Path(source_name), Path(destination_name), "JSON", mapping_description
+        )
+        if languages is None:
             return
-        target_language = self._ask_language("Target language", "ru")
-        if target_language is None:
-            return
+        source_language, target_language = languages
         if not self._confirm_unsaved_changes():
             return
         self._project_io.create_from_json(
@@ -617,12 +762,16 @@ class MainWindow(QMainWindow):
         )
         if not destination_name:
             return
-        source_language = self._ask_language("Source language", "en")
-        if source_language is None:
+        languages = self._ask_project_setup(
+            Path(source_name),
+            Path(destination_name),
+            "PO",
+            "Gettext msgid is the source, msgstr is the translation, and "
+            "comments/context are preserved",
+        )
+        if languages is None or not self._confirm_unsaved_changes():
             return
-        target_language = self._ask_language("Target language", "ru")
-        if target_language is None or not self._confirm_unsaved_changes():
-            return
+        source_language, target_language = languages
         self._project_io.create_from_po(
             Path(source_name), Path(destination_name), source_language, target_language
         )
@@ -645,12 +794,16 @@ class MainWindow(QMainWindow):
         )
         if not destination_name:
             return
-        source_language = self._ask_language("Source language", "en")
-        if source_language is None:
+        languages = self._ask_project_setup(
+            source_path,
+            Path(destination_name),
+            "CSV/TSV",
+            f"Source: {field_mapping.source_field}; target: {field_mapping.target_field}; "
+            f"key: {field_mapping.key_field or 'generated row number'}",
+        )
+        if languages is None or not self._confirm_unsaved_changes():
             return
-        target_language = self._ask_language("Target language", "ru")
-        if target_language is None or not self._confirm_unsaved_changes():
-            return
+        source_language, target_language = languages
         self._project_io.create_from_csv(
             source_path,
             Path(destination_name),
@@ -671,12 +824,17 @@ class MainWindow(QMainWindow):
         )
         if not destination_name:
             return
-        source_language = self._ask_language("Source language", "en")
-        if source_language is None:
+        mapping_description = (
+            "Element text nodes; XML structure, comments, and non-translatable values are preserved"
+            if field_mapping is None
+            else "Element text nodes and attributes: " + ", ".join(field_mapping.attribute_names)
+        )
+        languages = self._ask_project_setup(
+            Path(source_name), Path(destination_name), "XML", mapping_description
+        )
+        if languages is None or not self._confirm_unsaved_changes():
             return
-        target_language = self._ask_language("Target language", "ru")
-        if target_language is None or not self._confirm_unsaved_changes():
-            return
+        source_language, target_language = languages
         self._project_io.create_from_xml(
             Path(source_name),
             Path(destination_name),
@@ -758,6 +916,18 @@ class MainWindow(QMainWindow):
             return
         self._project_io.export_xml(Path(path_name))
 
+    def _export_all_documents(self) -> None:
+        if not self._workspace.has_project or not self._confirm_export_warnings(
+            "will retain source text or remain empty, depending on the file format"
+        ):
+            return
+        directory_name = QFileDialog.getExistingDirectory(
+            self, "Export all project files"
+        )
+        if not directory_name:
+            return
+        self._project_io.export_all_documents(Path(directory_name))
+
     def _confirm_export_warnings(self, untranslated_effect: str) -> bool:
         preflight = self._workspace.export_preflight()
         if not preflight.has_warnings:
@@ -792,6 +962,25 @@ class MainWindow(QMainWindow):
                 self._current_entry_id or "", translation
             ),
             "Translation updated",
+        )
+
+    def _select_translation_candidate(self, candidate: str) -> None:
+        if self._current_entry_id is None or self._current_entry_locked or self._busy:
+            return
+        label = "model" if candidate == "model" else "reviewer"
+        self._run_project_action(
+            lambda: self._workspace.select_translation_candidate(
+                self._current_entry_id or "", candidate
+            ),
+            f"{label.capitalize()} translation selected",
+        )
+
+    def _undo_last_translation(self) -> None:
+        if not self._workspace.has_project or self._busy:
+            return
+        self._run_project_action(
+            self._workspace.undo_last_translation,
+            "Last translation operation undone",
         )
 
     def _copy_source_to_translation(self) -> None:
@@ -1305,6 +1494,14 @@ class MainWindow(QMainWindow):
         self._current_entry_max_length = entry.max_length
         self._source_editor.setPlainText(entry.source)
         self._translation_editor.setPlainText(entry.translation or "")
+        self._model_candidate.setPlainText(entry.model_translation or "")
+        self._reviewer_candidate.setPlainText(entry.reviewer_translation or "")
+        self._use_model_candidate_button.setEnabled(
+            entry.model_translation is not None and not entry.locked and not self._busy
+        )
+        self._use_reviewer_candidate_button.setEnabled(
+            entry.reviewer_translation is not None and not entry.locked and not self._busy
+        )
         self._translation_editor.setReadOnly(entry.locked)
         self._copy_source_button.setEnabled(not entry.locked and not self._busy)
         self._apply_button.setEnabled(not entry.locked and not self._busy)
@@ -1335,11 +1532,15 @@ class MainWindow(QMainWindow):
         self._memory.invalidate()
         entries = self._workspace.project.entries if has_project else []
         self._model.set_entries(entries)
+        self._filters.update_documents(
+            self._workspace.project.documents if has_project else ()
+        )
         self._filters.update_entries(entries)
         self._project_overview.refresh()
         self._quality.refresh()
         self._glossary.refresh()
         project_actions_enabled = has_project and not self._busy
+        self._import_multiple_action.setEnabled(not self._busy)
         self._import_action.setEnabled(not self._busy)
         self._import_po_action.setEnabled(not self._busy)
         self._import_csv_action.setEnabled(not self._busy)
@@ -1347,6 +1548,9 @@ class MainWindow(QMainWindow):
         self._open_action.setEnabled(not self._busy)
         self._save_action.setEnabled(project_actions_enabled)
         self._save_as_action.setEnabled(project_actions_enabled)
+        self._undo_translation_action.setEnabled(
+            project_actions_enabled and self._workspace.can_undo_last_translation()
+        )
         source_format = self._workspace.source_format if has_project else None
         self._export_action.setEnabled(
             project_actions_enabled and source_format == "json"
@@ -1360,6 +1564,7 @@ class MainWindow(QMainWindow):
         self._export_xml_action.setEnabled(
             project_actions_enabled and source_format == "xml"
         )
+        self._export_all_action.setEnabled(project_actions_enabled)
         self._translate_button.setEnabled(project_actions_enabled)
         self._settings_button.setEnabled(not self._busy)
         self._ollama_setup_action.setEnabled(not self._busy)
@@ -1380,6 +1585,8 @@ class MainWindow(QMainWindow):
         self._glossary.set_enabled(project_actions_enabled)
         self._table.setEnabled(not self._busy)
         self._translation_editor.setEnabled(not self._busy)
+        self._use_model_candidate_button.setEnabled(False)
+        self._use_reviewer_candidate_button.setEnabled(False)
         self._approve_button.setEnabled(False)
         self._lock_button.setEnabled(False)
         self._restore_history_button.setEnabled(False)
@@ -1416,6 +1623,10 @@ class MainWindow(QMainWindow):
         self._current_entry_max_length = None
         self._source_editor.clear()
         self._translation_editor.clear()
+        self._model_candidate.clear()
+        self._reviewer_candidate.clear()
+        self._use_model_candidate_button.setEnabled(False)
+        self._use_reviewer_candidate_button.setEnabled(False)
         self._translation_editor.setReadOnly(False)
         self._current_issues.setText("No validation issues")
         self._dismiss_ai_issue_button.setEnabled(False)
@@ -1607,10 +1818,20 @@ class MainWindow(QMainWindow):
         self._log_viewer.detach()
         super().closeEvent(event)
 
-    def _ask_language(self, title: str, default: str) -> str | None:
-        language, accepted = QInputDialog.getText(
-            self, title, "Language code:", text=default
+    def _ask_project_setup(
+        self,
+        source_path: Path,
+        destination_path: Path,
+        source_format: str,
+        mapping_description: str,
+    ) -> tuple[str, str] | None:
+        dialog = ProjectSetupDialog(
+            source_path,
+            destination_path,
+            source_format,
+            mapping_description,
+            self,
         )
-        if not accepted or not language.strip():
+        if dialog.exec() != ProjectSetupDialog.DialogCode.Accepted:
             return None
-        return language.strip()
+        return dialog.language_pair()

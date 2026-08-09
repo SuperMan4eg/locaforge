@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from locaforge.application.ports.csv_format import CsvFieldMapping
 from locaforge.application.ports.json_format import JsonFieldMapping
 from locaforge.application.ports.xml_format import XmlFieldMapping
-from locaforge.application.project_workspace import ProjectWorkspace
+from locaforge.application.project_workspace import ImportFieldMapping, ProjectWorkspace
 
 type ProjectAction = Callable[[], object]
 type ActionRunner = Callable[[ProjectAction, str], bool]
@@ -106,6 +106,25 @@ class ProjectIoController:
             "Project created",
         )
 
+    def create_from_files(
+        self,
+        sources: Sequence[Path],
+        destination: Path,
+        source_language: str,
+        target_language: str,
+        field_mappings: Mapping[Path, ImportFieldMapping],
+    ) -> bool:
+        return self._run_project_change(
+            lambda: self._workspace.create_from_files(
+                sources,
+                self.with_suffix(destination, ".lfproj"),
+                source_language,
+                target_language,
+                field_mappings,
+            ),
+            f"Project created from {len(sources)} files",
+        )
+
     def open(self, path: Path) -> bool:
         return self._run_project_change(lambda: self._workspace.open(path), "Project opened")
 
@@ -141,6 +160,13 @@ class ProjectIoController:
         return self._run_action(
             lambda: self._workspace.export_xml(self.with_suffix(destination, ".xml")),
             "XML exported",
+        )
+
+    def export_all_documents(self, destination_directory: Path) -> bool:
+        document_count = len(self._workspace.project.documents)
+        return self._run_action(
+            lambda: self._workspace.export_all_documents(destination_directory),
+            f"{document_count} project files exported",
         )
 
     def _run_project_change(self, action: ProjectAction, success_message: str) -> bool:

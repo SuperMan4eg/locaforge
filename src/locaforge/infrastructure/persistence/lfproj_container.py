@@ -21,7 +21,8 @@ class LfprojContainer:
 
     _DATABASE_NAME = "project.db"
     _METADATA_NAME = "metadata.json"
-    _FORMAT_VERSION = 1
+    _FORMAT_VERSION = 2
+    _SUPPORTED_FORMAT_VERSIONS = frozenset({1, 2})
 
     def __init__(self, working_root: Path) -> None:
         self._working_root = working_root
@@ -144,9 +145,10 @@ class LfprojContainer:
 
     def _normalize_metadata(self, metadata: dict[str, object] | None) -> dict[str, object]:
         normalized = dict(metadata or {})
-        version = normalized.setdefault("format_version", self._FORMAT_VERSION)
-        if version != self._FORMAT_VERSION:
+        version = normalized.get("format_version", self._FORMAT_VERSION)
+        if version not in self._SUPPORTED_FORMAT_VERSIONS:
             raise ProjectContainerError(f"Unsupported project format version: {version!r}")
+        normalized["format_version"] = self._FORMAT_VERSION
         return normalized
 
     @staticmethod

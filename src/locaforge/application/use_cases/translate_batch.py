@@ -349,7 +349,7 @@ class TranslateBatch:
             if validation_issues:
                 pending_entries.append(entry)
                 continue
-            entry.mark_model_translation(record.translation)
+            entry.mark_translation_memory(record.translation)
             updated_entries.append(entry)
             issues_by_entry[entry.id] = ()
             translated_entry_ids.append(entry.id)
@@ -392,7 +392,10 @@ class TranslateBatch:
                         + "; ".join(issue.message for issue in validation_issues)
                     )
                     continue
-                entry.mark_model_translation(representative.translation)
+                if representative.model_translation == representative.translation:
+                    entry.mark_model_translation(representative.translation)
+                else:
+                    entry.mark_translation_memory(representative.translation)
                 updated_entries.append(entry)
                 issues_by_entry[entry.id] = ()
                 translations_to_store.append((entry, representative.translation))

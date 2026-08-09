@@ -12,7 +12,15 @@ from locaforge.infrastructure.persistence.sqlite_project_repository import SQLit
 
 class StubReviewer:
     def review(self, request):
-        return ReviewResponse((ReviewResult(request.entries[0].entry_id, "Wrong meaning"),))
+        return ReviewResponse(
+            (
+                ReviewResult(
+                    request.entries[0].entry_id,
+                    "Wrong meaning",
+                    "Keep",
+                ),
+            )
+        )
 
 
 def test_ai_review_stores_issue_without_changing_translation(tmp_path: Path) -> None:
@@ -42,6 +50,7 @@ def test_ai_review_stores_issue_without_changing_translation(tmp_path: Path) -> 
 
     assert issue_count == 1
     assert repository.get_entry("project-1", "entry-1").translation == "Preserve"
+    assert repository.get_entry("project-1", "entry-1").reviewer_translation == "Keep"
     assert repository.list_validation_issues("project-1")[0].code is ValidationCode.AI_REVIEW
 
 

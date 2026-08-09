@@ -80,7 +80,10 @@ def test_translate_rejects_non_json_model_output(monkeypatch: pytest.MonkeyPatch
 def test_review_parses_model_findings(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_urlopen(request: Any, timeout: float) -> FakeHttpResponse:
         return FakeHttpResponse(
-            {"response": '{"reviews":[{"entry_id":"entry-1","issue":"Wrong meaning"}]}' }
+            {
+                "response": '{"reviews":[{"entry_id":"entry-1",'
+                '"issue":"Wrong meaning","suggested_translation":"Keep"}]}'
+            }
         )
 
     monkeypatch.setattr("locaforge.infrastructure.llm.ollama_client.urlopen", fake_urlopen)
@@ -88,6 +91,7 @@ def test_review_parses_model_findings(monkeypatch: pytest.MonkeyPatch) -> None:
     response = OllamaClient().review(make_review_request())
 
     assert response.results[0].issue == "Wrong meaning"
+    assert response.results[0].suggested_translation == "Keep"
 
 
 def test_list_models_reads_and_sorts_ollama_tags(monkeypatch: pytest.MonkeyPatch) -> None:

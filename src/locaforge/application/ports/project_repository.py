@@ -53,3 +53,16 @@ class ProjectRepository(Protocol):
     ) -> None: ...
 
     def list_validation_issues(self, project_id: str) -> tuple[EntryValidationIssue, ...]: ...
+
+    def record_translation_operation(
+        self,
+        project_id: str,
+        previous_entries: Sequence[TranslationEntry],
+        previous_issues: Mapping[str, Sequence[ValidationIssue]],
+    ) -> None: ...
+
+    def has_undoable_translation_operation(self, project_id: str) -> bool: ...
+
+    def undo_last_translation_operation(
+        self, project_id: str
+    ) -> tuple[TranslationEntry, ...]: ...
