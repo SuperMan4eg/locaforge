@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from locaforge.application.project_workspace import ProjectWorkspace
 from locaforge.domain.translation_memory import TranslationMemoryRecord
+from locaforge.presentation.localization import tr
 
 
 class TranslationMemoryRecordDialog(QDialog):
@@ -162,8 +163,12 @@ class TranslationMemoryDialog(QDialog):
             return
         if QMessageBox.question(
             self,
-            "Delete TM record",
-            f"Delete translation memory record for:\n{record.source}",
+            tr("tm.delete_record", "Delete TM record"),
+            tr(
+                "tm.delete_confirmation",
+                "Delete translation memory record for:\n{source}",
+                source=record.source,
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         ) != QMessageBox.StandardButton.Yes:

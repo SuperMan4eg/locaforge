@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(slots=True)
@@ -14,6 +14,8 @@ class ProjectDocument:
     source_path: str
     source_format: str
     source_document: object
+    source_location: str | None = None
+    import_settings: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.id:

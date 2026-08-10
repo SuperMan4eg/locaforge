@@ -9,6 +9,7 @@ from locaforge.application.ports.csv_format import CsvFieldMapping
 from locaforge.application.ports.json_format import JsonFieldMapping
 from locaforge.application.ports.xml_format import XmlFieldMapping
 from locaforge.application.project_workspace import ImportFieldMapping, ProjectWorkspace
+from locaforge.domain.project_profile import ProjectProfile
 
 type ProjectAction = Callable[[], object]
 type ActionRunner = Callable[[ProjectAction, str], bool]
@@ -49,6 +50,52 @@ class ProjectIoController:
                 field_mapping,
             ),
             "Project created",
+        )
+
+    def create_project(
+        self,
+        destination: Path,
+        name: str,
+        source_language: str,
+        target_language: str,
+        profile: ProjectProfile,
+    ) -> bool:
+        return self._run_project_change(
+            lambda: self._workspace.create_project(
+                self.with_suffix(destination, ".lfproj"),
+                name,
+                source_language,
+                target_language,
+                profile,
+            ),
+            "Project created",
+        )
+
+    def import_files(
+        self,
+        sources: Sequence[Path],
+        field_mappings: Mapping[Path, ImportFieldMapping],
+        document_paths: Mapping[Path, str] | None = None,
+    ) -> bool:
+        return self._run_project_change(
+            lambda: self._workspace.import_files(
+                sources, field_mappings, document_paths
+            ),
+            f"{len(sources)} files added to project",
+        )
+
+    def update_project_profile(
+        self,
+        name: str,
+        source_language: str,
+        target_language: str,
+        profile: ProjectProfile,
+    ) -> bool:
+        return self._run_project_change(
+            lambda: self._workspace.update_project_profile(
+                name, source_language, target_language, profile
+            ),
+            "Project settings updated",
         )
 
     def create_from_po(
@@ -128,6 +175,12 @@ class ProjectIoController:
     def open(self, path: Path) -> bool:
         return self._run_project_change(lambda: self._workspace.open(path), "Project opened")
 
+    def open_backup(self, original_path: Path) -> bool:
+        return self._run_project_change(
+            lambda: self._workspace.open_backup(original_path),
+            "Project backup opened as a recovery copy",
+        )
+
     def save(self, destination: Path | None = None) -> bool:
         action = (
             self._workspace.save
@@ -167,6 +220,14 @@ class ProjectIoController:
         return self._run_action(
             lambda: self._workspace.export_all_documents(destination_directory),
             f"{document_count} project files exported",
+        )
+
+    def export_documents(
+        self, document_ids: Sequence[str], destination_directory: Path
+    ) -> bool:
+        return self._run_action(
+            lambda: self._workspace.export_documents(document_ids, destination_directory),
+            f"{len(document_ids)} selected project files exported",
         )
 
     def _run_project_change(self, action: ProjectAction, success_message: str) -> bool:

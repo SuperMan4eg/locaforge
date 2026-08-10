@@ -20,6 +20,7 @@ class HistoryController(QObject):
         self,
         workspace: ProjectWorkspace,
         revisions: QListWidget,
+        operations: QListWidget,
         restore_button: QPushButton,
         run_action: ActionRunner,
         current_entry_id: Callable[[], str | None],
@@ -29,6 +30,7 @@ class HistoryController(QObject):
         super().__init__(parent)
         self._workspace = workspace
         self._revisions = revisions
+        self._operations = operations
         self._restore_button = restore_button
         self._run_action = run_action
         self._current_entry_id = current_entry_id
@@ -50,10 +52,20 @@ class HistoryController(QObject):
             item = QListWidgetItem(f"{timestamp} | {translation}")
             item.setData(Qt.ItemDataRole.UserRole, revision.revision_id)
             self._revisions.addItem(item)
+        self._operations.clear()
+        for operation in self._workspace.project_operations():
+            timestamp = operation.recorded_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+            state = "Undone" if operation.undone else "Applied"
+            noun = "entry" if operation.entry_count == 1 else "entries"
+            self._operations.addItem(
+                f"{timestamp} | {state} | {operation.label} "
+                f"({operation.entry_count} {noun})"
+            )
         self._restore_button.setEnabled(False)
 
     def clear(self) -> None:
         self._revisions.clear()
+        self._operations.clear()
         self._restore_button.setEnabled(False)
 
     def restore(self) -> None:

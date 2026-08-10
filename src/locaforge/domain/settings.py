@@ -9,6 +9,8 @@ DEFAULT_REVIEW_PROMPT = """Act as a localization reviewer.
 Check meaning, completeness, terminology, placeholders, and natural target-language usage.
 Report only clear problems. Do not suggest purely stylistic changes."""
 
+REASONING_MODES = ("off", "low", "medium", "high")
+
 
 @dataclass(frozen=True, slots=True)
 class ModelSettings:
@@ -18,6 +20,8 @@ class ModelSettings:
     system_prompt: str = ""
     review_prompt: str = DEFAULT_REVIEW_PROMPT
     review_model: str = ""
+    translation_reasoning: str = "off"
+    review_reasoning: str = "off"
 
     def __post_init__(self) -> None:
         if not self.model.strip():
@@ -28,6 +32,10 @@ class ModelSettings:
             raise ValueError("Batch size must be positive")
         if self.review_model and not self.review_model.strip():
             raise ValueError("Reviewer model name must not be blank")
+        if self.translation_reasoning not in REASONING_MODES:
+            raise ValueError("Invalid translation reasoning mode")
+        if self.review_reasoning not in REASONING_MODES:
+            raise ValueError("Invalid reviewer reasoning mode")
 
     @property
     def effective_review_model(self) -> str:
@@ -41,6 +49,8 @@ class ModelSettings:
             "system_prompt": self.system_prompt,
             "review_prompt": self.review_prompt,
             "review_model": self.review_model,
+            "translation_reasoning": self.translation_reasoning,
+            "review_reasoning": self.review_reasoning,
         }
 
     @classmethod
@@ -52,6 +62,8 @@ class ModelSettings:
         system_prompt = values.get("system_prompt")
         review_prompt = values.get("review_prompt")
         review_model = values.get("review_model")
+        translation_reasoning = values.get("translation_reasoning")
+        review_reasoning = values.get("review_reasoning")
         return cls(
             model=model if isinstance(model, str) else defaults.model,
             timeout_seconds=(
@@ -73,5 +85,16 @@ class ModelSettings:
             ),
             review_model=(
                 review_model if isinstance(review_model, str) else defaults.review_model
+            ),
+            translation_reasoning=(
+                translation_reasoning
+                if isinstance(translation_reasoning, str)
+                and translation_reasoning in REASONING_MODES
+                else defaults.translation_reasoning
+            ),
+            review_reasoning=(
+                review_reasoning
+                if isinstance(review_reasoning, str) and review_reasoning in REASONING_MODES
+                else defaults.review_reasoning
             ),
         )

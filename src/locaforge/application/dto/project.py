@@ -44,3 +44,12 @@ class ProjectStatistics:
         if self.total_entries == 0:
             return 0
         return round(self.translated_entries / self.total_entries * 100)
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentRefreshPreview:
+    document_count: int
+    new_entries: int
+    changed_entries: int
+    removed_entries: int
+    unchanged_entries: int

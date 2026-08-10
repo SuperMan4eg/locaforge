@@ -1,39 +1,37 @@
+[English](README.md) | [Русский](README.ru.md)
+
 # LocaForge
 
-LocaForge — локальная desktop CAT-платформа для перевода игр, приложений и
-программного обеспечения с помощью локальных языковых моделей. Исходные файлы
-не отправляются во внешние сервисы и не изменяются напрямую.
+LocaForge is a local-first desktop CAT platform for translating games, applications,
+and software with local language models. Source files stay on the user's computer and
+are never modified in place.
 
-> Проект находится в активной разработке. Текущая версия — `0.3.0`.
+> The project is under active development. Current version: `0.4.0`.
 
-## Возможности
+## Features
 
-- импорт и экспорт JSON, CSV, PO и XML с сохранением структуры;
-- несколько файлов и смешанных форматов в одном проекте, пакетный импорт и экспорт;
-- переносимые проекты `.lfproj` на базе SQLite и ZIP-контейнера;
-- ручное и пакетное редактирование переводов;
-- локальный перевод через Ollama;
-- защита placeholders и проверка результатов перевода;
-- glossary, translation memory, история изменений и review workflow;
-- раздельные версии основной модели и reviewer с выбором итогового перевода;
-- отмена последней пакетной операции перевода через `Ctrl+Z`;
-- desktop-интерфейс на PySide6.
+- format-preserving import and export for JSON, CSV/TSV, Gettext PO, and XML;
+- multi-file, mixed-format projects in portable SQLite/ZIP-based `.lfproj` containers;
+- manual and batch editing, glossary, translation memory, revision history, and review;
+- local translation and AI review through Ollama, with separate model selection;
+- placeholder protection, validation, persistent Undo/Redo, and project-wide history;
+- optional structured project profiles for richer model context;
+- a PySide6 desktop interface with English, Russian, and user-provided localizations.
 
-## Требования
+## Requirements
 
-- Python 3.12 или новее;
-- [Ollama](https://ollama.com/) — для локального AI-перевода.
+- Python 3.12 or newer when running from source;
+- [Ollama](https://ollama.com/) for local AI translation and review.
 
-## Установка и запуск
+## Install and run
 
-### Готовая сборка для Windows
+### Windows portable build
 
-Скачайте `LocaForge-0.3.0-windows-x64.zip` на странице
-[последнего релиза](https://github.com/SuperMan4eg/locaforge/releases/latest),
-распакуйте архив и запустите `LocaForge.exe`. Устанавливать Python не требуется.
-Для локального AI-перевода Ollama устанавливается отдельно.
+Download `LocaForge-0.4.0-windows-x64.zip` from the
+[latest release](https://github.com/SuperMan4eg/locaforge/releases/latest), extract it,
+and run `LocaForge.exe`. Python is included; Ollama is installed separately.
 
-### Установка из исходного кода
+### From source
 
 ```powershell
 git clone https://github.com/SuperMan4eg/locaforge.git
@@ -44,13 +42,25 @@ python -m pip install -e ".[dev]"
 locaforge
 ```
 
-Приложение также можно запустить как Python-модуль:
+You can also start the application with `python -m locaforge`.
 
-```powershell
-python -m locaforge
-```
+## Model settings
 
-## Разработка
+Application settings define the global Ollama models, prompts, reasoning modes, timeout,
+and batch size. A project inherits the current global values unless **Override global
+model settings** is enabled in Project Settings. Enabling the override copies the current
+effective values into the project; later global changes no longer affect it. Disabling the
+override resumes inheritance. See the [developer guide](docs/development.md#model-settings-inheritance)
+for persistence and migration details.
+
+## Custom interface languages
+
+Language packages are JSON files loaded from the user localization directory. Start with
+the generated `template.json`, translate its messages without changing their keys or named
+parameters, save it under a new name, then reload and validate it in Settings. The complete
+format and troubleshooting guide is in [Custom localization](docs/localization.md).
+
+## Development
 
 ```powershell
 $env:PYTHONPATH = "src"
@@ -58,15 +68,15 @@ $env:QT_QPA_PLATFORM = "offscreen"
 python -m pytest
 python -m ruff check src tests
 python -m mypy src
+python scripts/check_docs.py
 ```
 
-CI выполняет тесты, Ruff и mypy на Python 3.12 и 3.13, собирает wheel и source
-distribution, а также создаёт и запускает portable-сборку Windows. Тег вида
-`v0.3.0` публикует GitHub Release с архивом, Python-пакетами и SHA-256 checksums.
+CI runs these quality checks on Python 3.12 and 3.13, builds Python packages and a
+smoke-tested Windows portable archive, and verifies documentation language pairs and links.
 
-## Архитектура
+## Architecture and project documentation
 
-Проект следует Clean Architecture; зависимости направлены внутрь:
+The code follows Clean Architecture; dependencies point inward:
 
 ```text
 Presentation ─┐
@@ -74,27 +84,11 @@ Infrastructure├──> Application ───> Domain
 App/bootstrap ─┘
 ```
 
-- `domain` — сущности и правила предметной области;
-- `application` — сценарии использования, DTO и порты;
-- `infrastructure` — форматы файлов, SQLite, контейнер проекта и Ollama;
-- `presentation` — PySide6 UI без бизнес-логики;
-- `app` — сборка зависимостей и запуск приложения.
+Read the [architecture](docs/architecture.md), [developer guide](docs/development.md),
+[MVP contracts](contracts/mvp-contracts.md), [JSON round-trip contract](contracts/json-round-trip.md),
+and [changelog](CHANGELOG.md). Every user and developer document is available in English
+and Russian; use the language switch at the top of each page.
 
-Подробности: [архитектура](docs/architecture.md),
-[руководство разработчика](docs/development.md) и [контракты MVP](contracts/mvp-contracts.md).
-История изменений ведётся в [CHANGELOG](CHANGELOG.md).
+## License
 
-## Принципы проекта
-
-- полностью локальная работа и контроль данных пользователем;
-- исходные файлы остаются неизменными;
-- экспорт восстанавливает исходный формат;
-- бизнес-логика отделена от GUI, хранилища и LLM backend;
-- расширяемость через явные интерфейсы и тестируемые контракты.
-
-## Лицензия
-
-LocaForge распространяется по свободной лицензии
-[Apache License 2.0](LICENSE). Она разрешает использовать, изменять и
-распространять проект, в том числе в коммерческих целях, при соблюдении условий
-лицензии и сохранении уведомлений об авторстве.
+Licensed under the [Apache License 2.0](LICENSE).

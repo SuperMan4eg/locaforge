@@ -1,16 +1,16 @@
-# Архитектура LocaForge 0.3
+[English](architecture.md) | [Русский](architecture.ru.md)
 
-## Назначение
+# LocaForge architecture
 
-LocaForge — локальная CAT-платформа для перевода JSON, CSV/TSV, Gettext PO и XML.
-Приложение импортирует исходный документ в переносимый проект `.lfproj`, позволяет
-редактировать и проверять переводы, использовать локальную модель Ollama, glossary,
-translation memory и AI review, после чего восстанавливает исходный формат при
-экспорте. Исходные файлы пользователя не изменяются.
+## Purpose
 
-## Правило зависимостей
+LocaForge imports JSON, CSV/TSV, Gettext PO, and XML into a portable `.lfproj` project,
+supports editing, validation, local-model translation and review, then reconstructs the
+original format on export. User source files are never changed in place.
 
-Зависимости направлены только внутрь:
+## Dependency rule
+
+Dependencies point inward:
 
 ```text
 Presentation ─┐
@@ -18,100 +18,59 @@ Infrastructure├──> Application ───> Domain
 App/bootstrap ─┘
 ```
 
-- `domain` содержит сущности, value objects и правила предметной области.
-- `application` содержит сценарии использования, DTO, фасад `ProjectWorkspace` и
-  порты внешних зависимостей.
-- `infrastructure` реализует форматы файлов, SQLite-хранилища, ZIP-контейнер и
-  Ollama-клиент.
-- `presentation` содержит PySide6 widgets, models, фоновые workers и контроллеры
-  пользовательских сценариев; бизнес-правила остаются в application/domain.
-- `app` связывает конкретные реализации и запускает приложение.
+- `domain` contains entities, value objects, and business rules.
+- `application` contains use cases, DTOs, `ProjectWorkspace`, and external ports.
+- `infrastructure` implements file formats, SQLite persistence, `.lfproj`, Ollama, and metadata lookup.
+- `presentation` contains PySide6 widgets, models, workers, and UI controllers.
+- `app` is the composition root and application entry point.
 
-`domain` и `application` не импортируют PySide6, sqlite3, HTTP-клиенты или код
-конкретных парсеров.
+`domain` and `application` do not import PySide6, `sqlite3`, HTTP clients, or concrete parsers.
 
-## Структура пакетов
+## Package structure
 
 ```text
 src/locaforge/
-  app/                    # composition root, logging, запуск приложения
-  domain/                 # Project, TranslationEntry, glossary, TM, history
+  app/                    # composition root, logging, startup
+  domain/                 # projects, entries, profiles, settings, history
   application/
-    ports/                # форматы, persistence, LLM, glossary и TM
+    ports/                # persistence, formats, LLM, metadata, glossary, TM
     use_cases/            # import/export, edit, translate, validate, review
-    dto/                  # результаты перевода, review, validation и project
+    dto/                  # boundary data
+    services/             # cross-use-case application services
   infrastructure/
-    formats/              # JSON, CSV/TSV, PO, XML и glossary CSV
-    persistence/          # SQLite, .lfproj, glossary и translation memory
-    llm/                  # Ollama translation/review client
-  presentation/
-    *_controller.py       # UI orchestration по отдельным сценариям
-    *_worker.py           # фоновые Qt-потоки
-    main_window.py        # композиция widgets, actions и контроллеров
+    formats/              # JSON, CSV/TSV, PO, XML
+    persistence/          # SQLite and .lfproj container
+    llm/                  # Ollama client
+    metadata/             # optional online project metadata
+  presentation/           # Qt UI, controllers, workers, localization
+  resources/locales/      # bundled interface language packages
 ```
 
-## Основные сценарии
+## Main flows
 
-1. Импорт JSON, CSV/TSV, PO или XML создаёт `Project` и сохраняет исходную
-   document model для обратного экспорта.
-2. Ручное и пакетное редактирование меняет только рабочий проект, записывает
-   историю и обновляет translation memory.
-3. Batch translation защищает placeholders, вызывает Ollama, валидирует каждый
-   ответ и сохраняет частично успешный результат.
-4. Validation проверяет структуру, placeholders, длину, glossary, согласованность
-   и другие QA-правила.
-5. AI review добавляет отдельные issues, не изменяя перевод автоматически.
-6. Экспорт выполняет preflight и восстанавливает формат импортированного документа.
+Importers parse a source file into format-neutral entries plus round-trip metadata. Use
+cases operate only on domain objects and ports. The SQLite repository persists the project;
+the `.lfproj` container packages that database for transport. Exporters combine current
+translations with the stored metadata and write a new destination file transactionally.
 
-Долгие операции выполняются `QThread` workers. Контроллеры presentation управляют
-их жизненным циклом, отменой, прогрессом и обновлением UI, а изменение данных всегда
-проходит через `ProjectWorkspace` и application use cases.
+Translation and review resolve the effective [model settings](development.md#model-settings-inheritance),
+build bounded project context, call the LLM port, validate the result, and record a reversible
+operation. Presentation controllers coordinate these flows without owning business rules.
 
-## Проект и сохранение
+## Persistence and compatibility
 
-`.lfproj` — ZIP-контейнер, а не SQLite-база, изменяемая внутри архива. При открытии:
+A project can contain multiple documents and formats. Stable entry and document identifiers
+support filtering, refresh, history, and batch operations. Schema migrations happen when a
+container is opened; old containers remain readable. Failed opens may recover from the
+automatic `.lfproj.bak` copy without overwriting either original file.
 
-1. контейнер распаковывается в управляемый рабочий каталог;
-2. SQLite используется только из этого каталога;
-3. сохранение формирует новый контейнер во временном файле;
-4. временный файл атомарно заменяет целевой `.lfproj`;
-5. предыдущая версия сохраняется как резервная копия.
+## Extension points
 
-Autosave использует тот же безопасный путь сохранения. Несохранённое состояние
-отражается в `Project.dirty`.
+Add a file format by implementing the importer/exporter ports and registering them in the
+composition root. Add an LLM backend behind the LLM port. Add UI languages as described in
+[Custom localization](localization.md); language packages do not alter domain behavior.
 
-## Форматы и расширение
+## Current boundaries
 
-Каждый формат реализует application-порты importer/exporter. Импорт сохраняет
-метаданные, необходимые для round trip, а экспорт заменяет только переводимые
-значения. Добавление формата не должно менять domain или UI-сценарии проекта.
-
-Ollama, persistence, glossary и translation memory также подключены через порты.
-Новый LLM backend или хранилище реализует соответствующий порт и регистрируется в
-`app/bootstrap.py`.
-
-## Presentation
-
-`MainWindow` является composition view: создаёт widgets и actions, после чего
-передаёт их специализированным контроллерам. Отдельные контроллеры управляют
-project I/O, import mappings, фильтрами, QA, batch translation, AI review,
-validation, translation memory, glossary, history, recent projects и model pull.
-
-Такое разделение позволяет тестировать orchestration без запуска полного окна.
-Дополнительные smoke-тесты создают реальный `MainWindow` в offscreen-режиме и
-проверяют совместимость всех сигналов и контроллеров.
-
-## Границы версии 0.3
-
-Один проект содержит одну языковую пару и один или несколько импортированных
-документов разных поддерживаемых форматов. `ProjectDocument` хранит исходный путь,
-формат и document model для round trip; каждая `TranslationEntry` принадлежит
-документу через `document_id`.
-
-Контейнер формата 2 автоматически открывает проекты формата 1 и мигрирует старую
-SQLite-схему. Основной LLM backend — Ollama. Результаты основной модели и reviewer
-хранятся отдельно от активного экспортируемого перевода. Batch translation создаёт
-операционный снимок для транзакционного Undo.
-
-Плагины, командная работа, Redo и альтернативные LLM backend'ы остаются последующими
-расширениями.
+LocaForge is a single-user desktop application. It does not provide collaborative editing,
+a hosted model backend, or direct mutation of source files.

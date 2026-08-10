@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 
+from locaforge.application.dto.project_description import ProjectDescriptionRequest
 from locaforge.application.dto.review import ReviewRequest, ReviewRequestItem
 from locaforge.application.dto.translation import TranslationRequest, TranslationRequestItem
 from locaforge.application.errors import InvalidModelResponseError
@@ -62,7 +63,13 @@ def test_translate_sends_ollama_request_and_parses_json(monkeypatch: pytest.Monk
     assert response.results[0].translation == "Привет"
     assert captured == {
         "url": "http://127.0.0.1:11434/api/generate",
-        "payload": {"model": "qwen3", "prompt": "Translate", "stream": False, "format": "json"},
+        "payload": {
+            "model": "qwen3",
+            "prompt": "Translate",
+            "stream": False,
+            "format": "json",
+            "think": False,
+        },
         "timeout": 5.0,
     }
 
@@ -75,6 +82,30 @@ def test_translate_rejects_non_json_model_output(monkeypatch: pytest.MonkeyPatch
 
     with pytest.raises(InvalidModelResponseError, match="non-JSON"):
         OllamaClient().translate(make_request())
+
+
+def test_translate_sends_selected_reasoning_level(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(request: Any, timeout: float) -> FakeHttpResponse:
+        captured.update(json.loads(request.data.decode("utf-8")))
+        return FakeHttpResponse({"response": '{"translations":[]}'})
+
+    monkeypatch.setattr("locaforge.infrastructure.llm.ollama_client.urlopen", fake_urlopen)
+    request = make_request()
+    OllamaClient().translate(
+        TranslationRequest(
+            request.model,
+            request.source_language,
+            request.target_language,
+            request.entries,
+            request.prompt,
+            request.timeout_seconds,
+            "medium",
+        )
+    )
+
+    assert captured["think"] == "medium"
 
 
 def test_review_parses_model_findings(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -92,6 +123,34 @@ def test_review_parses_model_findings(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert response.results[0].issue == "Wrong meaning"
     assert response.results[0].suggested_translation == "Keep"
+
+
+def test_describe_project_parses_structured_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_urlopen(request: Any, timeout: float) -> FakeHttpResponse:
+        return FakeHttpResponse(
+            {
+                "response": json.dumps(
+                    {
+                        "description": "A space exploration game.",
+                        "project_type": "Game",
+                        "domain": "Science fiction",
+                        "tone": "Cinematic",
+                    }
+                )
+            }
+        )
+
+    monkeypatch.setattr("locaforge.infrastructure.llm.ollama_client.urlopen", fake_urlopen)
+
+    response = OllamaClient().describe_project(
+        ProjectDescriptionRequest("Nebula", "qwen3", 12.0)
+    )
+
+    assert response.profile.description == "A space exploration game."
+    assert response.profile.project_type == "Game"
+    assert response.profile.domain == "Science fiction"
 
 
 def test_list_models_reads_and_sorts_ollama_tags(monkeypatch: pytest.MonkeyPatch) -> None:

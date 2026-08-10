@@ -1,6 +1,86 @@
+[English](CHANGELOG.md) | [Русский](CHANGELOG.ru.md)
+
 # Changelog
 
 All notable changes to LocaForge are documented in this file.
+
+## Unreleased
+
+## 0.4.0 — 2026-08-10
+
+- Extended persistent Undo/Redo history to approval/reopen and lock/unlock actions,
+  including atomic history entries for bulk review operations.
+- Undo and Redo menu items now name the exact operation that will be applied.
+- Replace, Apply to matches, and Restore revision now participate in persistent
+  Undo/Redo as atomic operations.
+- AI Review results, reviewer candidates, and generated QA issues can now be undone
+  and redone, including the completed part of a cancelled multi-batch review.
+- Dismissing one or many AI review findings is now reversible through the same
+  persistent Undo/Redo history.
+- Undo/Redo now verifies QA issue snapshots as well as entry fields, preventing an
+  older operation from overwriting validation results produced later.
+- The History dock now shows recent project-wide operations with timestamps, applied
+  or undone state, and the number of affected entries.
+- Project creation and settings can generate an editable structured profile from the
+  project name using the configured local Ollama model.
+- Project-profile generation runs in a background worker with visible busy state, so
+  slow local model responses no longer freeze the project dialog.
+- When explicitly enabled in Privacy settings and selected in the project dialog,
+  profile generation can enrich the local-model prompt with bounded Wikipedia search
+  snippets; source localization strings are never sent.
+- The File menu now exposes one format-agnostic Import files command and project-level
+  Export selected / Export all commands instead of separate format-specific actions.
+- The Project file tree now supports instant filtering by file name or relative path;
+  selecting a filtered folder affects only its visible matching files.
+- Project-tab keyboard navigation now routes Ctrl+F to file search, Ctrl+A to all
+  visible files, and Escape to clearing the active filter or selection.
+- The Project tab displays visible/total and selected file counts, making the scope of
+  batch export, refresh, and removal explicit before running an action.
+- Unified import preview now detects case-insensitive project-path conflicts against
+  files already in the project and blocks the import before mapping dialogs are shown.
+- Project paths can now be edited directly in the unified import preview, with live
+  uniqueness and safety validation so conflicts can be fixed without selecting files again.
+- Unified import can prepend a safe destination folder to every selected file in one
+  action, making large batches easier to organize inside the project tree.
+
+### Added
+
+- Project-first workflow: empty projects can be created with a descriptive profile
+  before localization files are imported.
+- A single multi-select command adds JSON, CSV/TSV, PO, and XML files to the open
+  project while preserving per-format mapping steps.
+- Project Explorer now supports Windows-style multi-selection, filters the translation
+  table by selected files, exports only the selected files, and opens project settings.
+- Added central Translations and Project workspaces. The Project workspace shows file
+  details and aggregate selection statistics, supports double-click navigation, and
+  exposes common file operations through a context menu.
+- Added a dedicated categorized application Settings dialog for appearance, editor,
+  autosave, import/export confirmation, default project languages, and privacy choices.
+- Project profile metadata is now assembled into a bounded, previewable AI context and
+  supplied to both translation and reviewer prompts.
+- Failed project opens can recover from the automatic `.lfproj.bak` copy without
+  overwriting either the damaged original or its backup.
+- Batch translation undo now supports persistent Redo with `Ctrl+Shift+Z`, including
+  translation candidates, workflow status, and validation issues.
+- Unified import now accepts drag-and-drop files and folders, recursively discovers
+  supported formats, and previews the complete file set before format mapping/import.
+- Folder imports preserve relative paths, allowing same-named localization files in
+  different directories and restoring the directory tree during batch export.
+- The Project workspace now renders a real expandable directory tree with format and
+  progress columns; selecting a folder targets every localization file below it.
+- Selected files or directory branches can be removed transactionally from a project;
+  source files remain untouched while associated entries, QA, and history are cleaned.
+- Newly imported documents retain their original source location for future refresh
+  workflows, and the Project tree can open that location in the system file manager.
+- Selected documents can be refreshed from source with a new/changed/removed preview;
+  stable entries keep translations while changed source text is reopened for review.
+- Manual translation edits now participate in the persistent Ctrl+Z/Ctrl+Shift+Z
+  operation history, restoring both workflow status and validation state.
+
+### Changed
+
+- The File menu now centers on New Project, Open Project, and Add Files instead of
+  separate format-specific project creation commands.
 
 ## 0.3.0 — 2026-08-09
 

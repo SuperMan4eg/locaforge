@@ -49,4 +49,5 @@ def test_table_model_updates_one_entry_without_resetting_rows() -> None:
     assert application is not None
     assert model.rowCount() == 1
     assert model.entry_at(0) == updated
-    assert model.data(model.index(0, 3)) == "needs_review"
+    assert model.data(model.index(0, 3)) == "Needs review"
+    assert model.data(model.index(0, 3), model.status_role) == "needs_review"

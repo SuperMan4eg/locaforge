@@ -20,6 +20,13 @@ try {
         throw "PyInstaller failed with exit code $LASTEXITCODE"
     }
 
+    foreach ($Locale in @("en.json", "ru.json")) {
+        $LocalePath = Join-Path $BundleDirectory "_internal\locaforge\resources\locales\$Locale"
+        if (-not (Test-Path -LiteralPath $LocalePath -PathType Leaf)) {
+            throw "Portable bundle is missing localization: $Locale"
+        }
+    }
+
     if (Test-Path -LiteralPath $ArchivePath) {
         Remove-Item -LiteralPath $ArchivePath
     }

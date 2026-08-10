@@ -12,5 +12,6 @@ class UpdateModelSettings:
     def execute(self, project_id: str, settings: ModelSettings) -> Project:
         project = self._project_repository.get(project_id)
         project.update_model_settings(settings)
+        project.set_model_settings_override_enabled(True)
         self._project_repository.save(project)
         return project

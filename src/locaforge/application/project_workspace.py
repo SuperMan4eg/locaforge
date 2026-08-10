@@ -4,15 +4,22 @@ from __future__ import annotations
 
 import os
 import tempfile
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
-from locaforge.application.dto.project import ExportPreflight, ProjectStatistics
+from locaforge.application.dto.project import (
+    DocumentRefreshPreview,
+    ExportPreflight,
+    ProjectStatistics,
+)
+from locaforge.application.dto.project_description import ProjectDescriptionRequest
 from locaforge.application.dto.review import ReviewBatchResult
 from locaforge.application.dto.translation import BatchResult
 from locaforge.application.dto.validation import (
     EntryValidationIssue,
     ProjectValidationResult,
+    ValidationCode,
     ValidationIssue,
 )
 from locaforge.application.errors import ModelUnavailableError, NoOpenProjectError
@@ -31,6 +38,7 @@ from locaforge.application.ports.json_format import (
 from locaforge.application.ports.llm import LLMClient
 from locaforge.application.ports.po_format import PoExporter, PoImporter
 from locaforge.application.ports.project_container import ProjectContainer
+from locaforge.application.ports.project_metadata_lookup import ProjectMetadataLookup
 from locaforge.application.ports.project_repository import ProjectRepository
 from locaforge.application.ports.project_repository_factory import ProjectRepositoryFactory
 from locaforge.application.ports.translation_memory import TranslationMemoryStore
@@ -72,10 +80,12 @@ from locaforge.application.use_cases.set_entry_locked import SetEntryLocked
 from locaforge.application.use_cases.translate_batch import TranslateBatch
 from locaforge.application.use_cases.update_model_settings import UpdateModelSettings
 from locaforge.application.use_cases.validate_project import ValidateProject
+from locaforge.domain.document import ProjectDocument
 from locaforge.domain.entry import EntryStatus, TranslationEntry
 from locaforge.domain.glossary import GlossaryTerm
-from locaforge.domain.history import EntryRevision
+from locaforge.domain.history import EntryRevision, ProjectOperation
 from locaforge.domain.project import Project
+from locaforge.domain.project_profile import ProjectProfile
 from locaforge.domain.settings import ModelSettings
 from locaforge.domain.translation_memory import (
     TranslationMemoryMatch,
@@ -114,6 +124,7 @@ class ProjectWorkspace:
         csv_exporter: CsvExporter | None = None,
         xml_importer: XmlImporter | None = None,
         xml_exporter: XmlExporter | None = None,
+        project_metadata_lookup: ProjectMetadataLookup | None = None,
     ) -> None:
         self._json_importer = json_importer
         self._json_exporter = json_exporter
@@ -129,8 +140,10 @@ class ProjectWorkspace:
         self._csv_exporter = csv_exporter
         self._xml_importer = xml_importer
         self._xml_exporter = xml_exporter
+        self._project_metadata_lookup = project_metadata_lookup
         self._project: Project | None = None
         self._session: ProjectSession | None = None
+        self._global_model_settings = ModelSettings()
 
     @property
     def has_project(self) -> bool:
@@ -147,6 +160,25 @@ class ProjectWorkspace:
         if self._session is None:
             raise NoOpenProjectError("No project is currently open")
         return self._session
+
+    @property
+    def global_model_settings(self) -> ModelSettings:
+        return self._global_model_settings
+
+    def set_global_model_settings(self, settings: ModelSettings) -> None:
+        """Set application-wide settings used by projects without an override."""
+        self._global_model_settings = settings
+
+    def resolve_model_settings(self, project: Project | None = None) -> ModelSettings:
+        """Return the effective model settings for a project or the application."""
+        target = project if project is not None else self._project
+        if target is not None and target.model_settings_override_enabled:
+            return target.model_settings
+        return self._global_model_settings
+
+    @property
+    def model_settings_source(self) -> str:
+        return "project" if self.project.model_settings_override_enabled else "global"
 
     def create_from_json(
         self,
@@ -166,6 +198,349 @@ class ProjectWorkspace:
         self._project = created.project
         self._session = created.session
         return self._project
+
+    def generate_project_profile(
+        self, name: str, *, use_online_lookup: bool = False
+    ) -> ProjectProfile:
+        if self._llm_client is None:
+            raise ModelUnavailableError("No LLM backend is configured")
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValueError("Enter a project name before generating its description")
+        settings = self.resolve_model_settings()
+        research_context = ""
+        if use_online_lookup:
+            if self._project_metadata_lookup is None:
+                raise ModelUnavailableError("Online project lookup is not configured")
+            research_context = self._project_metadata_lookup.lookup(normalized_name)
+        return self._llm_client.describe_project(
+            ProjectDescriptionRequest(
+                normalized_name,
+                settings.model,
+                settings.timeout_seconds,
+                research_context,
+            )
+        ).profile
+
+    def create_project(
+        self,
+        destination: Path,
+        name: str,
+        source_language: str,
+        target_language: str,
+        profile: ProjectProfile | None = None,
+    ) -> Project:
+        """Create and open an empty project before any source files are imported."""
+        if destination.suffix.lower() != ".lfproj":
+            raise ValueError("Project destination must use the .lfproj extension")
+        project = Project(
+            id=str(uuid.uuid4()),
+            name=name.strip(),
+            source_language=source_language.strip(),
+            target_language=target_language.strip(),
+            profile=profile or ProjectProfile(),
+        )
+        session = self._project_container.create(
+            {
+                "project_id": project.id,
+                "project_name": project.name,
+                "source_files": [],
+                "source_format": "multiple",
+                "source_language": project.source_language,
+                "target_language": project.target_language,
+            }
+        )
+        repository = self._repository_factory.create(session.database_path)
+        repository.create(project)
+        self._project_container.save(session, destination)
+        self._project = project
+        self._session = session
+        return project
+
+    def import_files(
+        self,
+        source_paths: Sequence[Path],
+        field_mappings: Mapping[Path, ImportFieldMapping] | None = None,
+        document_paths: Mapping[Path, str] | None = None,
+    ) -> tuple[ProjectDocument, ...]:
+        """Import one or more source files into the currently open project."""
+        if not source_paths:
+            raise ValueError("Select at least one source file")
+        normalized_paths = tuple(Path(path) for path in source_paths)
+        existing_paths = {
+            document.source_path.casefold() for document in self.project.documents
+        }
+        requested_paths = {
+            path: (document_paths or {}).get(path, path.name).replace("\\", "/")
+            for path in normalized_paths
+        }
+        normalized_document_paths = [value.casefold() for value in requested_paths.values()]
+        if (
+            len(normalized_document_paths) != len(set(normalized_document_paths))
+            or existing_paths.intersection(normalized_document_paths)
+        ):
+            raise ValueError(
+                "Imported files must have unique names or relative paths within the project"
+            )
+        for value in requested_paths.values():
+            relative_path = Path(value)
+            if relative_path.is_absolute() or ".." in relative_path.parts or not value:
+                raise ValueError(f"Unsafe project document path: {value!r}")
+        mappings = field_mappings or {}
+        imported_projects = [
+            self._import_source_file(
+                path,
+                self.project.source_language,
+                self.project.target_language,
+                mappings.get(path),
+            )
+            for path in normalized_paths
+        ]
+        added_documents = tuple(
+            document
+            for imported in imported_projects
+            for document in imported.documents
+        )
+        for imported in imported_projects:
+            self.project.documents.extend(imported.documents)
+            self.project.entries.extend(imported.entries)
+        for source_path, imported in zip(
+            normalized_paths, imported_projects, strict=True
+        ):
+            imported.documents[0].source_path = requested_paths[source_path]
+        self.project.source_document = self.project.documents[0].source_document
+        self.project.dirty = True
+        self.session.metadata["source_files"] = [
+            document.source_path for document in self.project.documents
+        ]
+        self.session.metadata["source_format"] = (
+            self.project.documents[0].source_format
+            if len(self.project.documents) == 1
+            else "multiple"
+        )
+        self._repository().save(self.project)
+        return added_documents
+
+    def update_project_profile(
+        self,
+        name: str,
+        source_language: str,
+        target_language: str,
+        profile: ProjectProfile,
+    ) -> None:
+        """Update project-owned metadata and persist it in the working database."""
+        normalized_name = name.strip()
+        normalized_source = source_language.strip()
+        normalized_target = target_language.strip()
+        if not normalized_name or not normalized_source or not normalized_target:
+            raise ValueError("Project name and languages must not be empty")
+        if normalized_source.casefold() == normalized_target.casefold():
+            raise ValueError("Source and target languages must be different")
+        project = self.project
+        project.name = normalized_name
+        project.source_language = normalized_source
+        project.target_language = normalized_target
+        project.profile = profile
+        project.dirty = True
+        self.session.metadata.update(
+            {
+                "project_name": normalized_name,
+                "source_language": normalized_source,
+                "target_language": normalized_target,
+            }
+        )
+        self._repository().save(project)
+
+    def remove_documents(self, document_ids: Sequence[str]) -> tuple[int, int]:
+        """Remove documents and their project-owned data, never source files."""
+        selected_ids = tuple(dict.fromkeys(document_ids))
+        if not selected_ids:
+            raise ValueError("Select at least one project file to remove")
+        known_ids = {document.id for document in self.project.documents}
+        if not set(selected_ids).issubset(known_ids):
+            raise ValueError("One or more selected project files do not exist")
+        entry_count = sum(
+            entry.document_id in selected_ids for entry in self.project.entries
+        )
+        repository = self._repository()
+        repository.remove_documents(self.project.id, selected_ids)
+        self._reload(repository)
+        self.project.source_document = (
+            self.project.documents[0].source_document
+            if self.project.documents
+            else None
+        )
+        self.session.metadata["source_files"] = [
+            document.source_path for document in self.project.documents
+        ]
+        self.session.metadata["source_format"] = (
+            self.project.documents[0].source_format
+            if len(self.project.documents) == 1
+            else "multiple"
+        )
+        return len(selected_ids), entry_count
+
+    def preview_document_refresh(
+        self, document_ids: Sequence[str]
+    ) -> DocumentRefreshPreview:
+        _, _, preview, _, _ = self._prepare_document_refresh(document_ids)
+        return preview
+
+    def refresh_documents(
+        self, document_ids: Sequence[str]
+    ) -> DocumentRefreshPreview:
+        refreshed_documents, refreshed_entries, preview, removed_ids, changed_ids = (
+            self._prepare_document_refresh(document_ids)
+        )
+        selected_ids = {document.id for document in refreshed_documents}
+        document_by_id = {document.id: document for document in refreshed_documents}
+        self.project.documents = [
+            document_by_id.get(document.id, document)
+            for document in self.project.documents
+        ]
+        self.project.entries = [
+            entry for entry in self.project.entries if entry.document_id not in selected_ids
+        ]
+        self.project.entries.extend(refreshed_entries)
+        self.project.source_document = (
+            self.project.documents[0].source_document if self.project.documents else None
+        )
+        self.project.dirty = True
+        repository = self._repository()
+        repository.remove_entry_artifacts(
+            self.project.id, tuple(removed_ids), tuple(changed_ids)
+        )
+        repository.save(self.project)
+        return preview
+
+    def _prepare_document_refresh(
+        self, document_ids: Sequence[str]
+    ) -> tuple[
+        list[ProjectDocument],
+        list[TranslationEntry],
+        DocumentRefreshPreview,
+        set[str],
+        set[str],
+    ]:
+        selected_ids = tuple(dict.fromkeys(document_ids))
+        if not selected_ids:
+            raise ValueError("Select at least one project file to refresh")
+        documents = [
+            document
+            for document in self.project.documents
+            if document.id in selected_ids
+        ]
+        if len(documents) != len(selected_ids):
+            raise ValueError("One or more selected project files do not exist")
+        refreshed_documents: list[ProjectDocument] = []
+        refreshed_entries: list[TranslationEntry] = []
+        new_count = changed_count = removed_count = unchanged_count = 0
+        removed_ids: set[str] = set()
+        changed_ids: set[str] = set()
+        for document in documents:
+            if not document.source_location:
+                raise ValueError(f"Source location is not recorded for {document.source_path!r}")
+            source_path = Path(document.source_location)
+            if not source_path.is_file():
+                raise ValueError(f"Source file no longer exists: {source_path}")
+            mapping = self._restore_import_mapping(document)
+            imported = self._import_source_file(
+                source_path,
+                self.project.source_language,
+                self.project.target_language,
+                mapping,
+            )
+            imported_document = imported.documents[0]
+            imported_document.id = document.id
+            imported_document.name = document.name
+            imported_document.source_path = document.source_path
+            imported_document.source_location = document.source_location
+            imported_document.import_settings = dict(document.import_settings)
+            old_entries = [
+                entry for entry in self.project.entries if entry.document_id == document.id
+            ]
+            old_by_identity = {self._entry_refresh_identity(entry): entry for entry in old_entries}
+            seen_identities: set[tuple[object, ...]] = set()
+            for entry in imported.entries:
+                identity = self._entry_refresh_identity(entry)
+                if identity in seen_identities:
+                    raise ValueError(f"Duplicate entry identity in {document.source_path!r}")
+                seen_identities.add(identity)
+                old_entry = old_by_identity.get(identity)
+                entry.document_id = document.id
+                if old_entry is None:
+                    new_count += 1
+                else:
+                    entry.id = old_entry.id
+                    entry.translation = old_entry.translation
+                    if entry.source == old_entry.source:
+                        entry.status = old_entry.status
+                        entry.locked = old_entry.locked
+                        entry.model_translation = old_entry.model_translation
+                        entry.reviewer_translation = old_entry.reviewer_translation
+                        unchanged_count += 1
+                    else:
+                        entry.status = (
+                            EntryStatus.NEEDS_REVIEW
+                            if old_entry.translation is not None
+                            else EntryStatus.UNTRANSLATED
+                        )
+                        entry.locked = False
+                        changed_ids.add(entry.id)
+                        changed_count += 1
+                refreshed_entries.append(entry)
+            removed = set(old_by_identity) - seen_identities
+            removed_entry_ids = {old_by_identity[identity].id for identity in removed}
+            removed_ids.update(removed_entry_ids)
+            removed_count += len(removed_entry_ids)
+            refreshed_documents.append(imported_document)
+        return (
+            refreshed_documents,
+            refreshed_entries,
+            DocumentRefreshPreview(
+                len(documents), new_count, changed_count, removed_count, unchanged_count
+            ),
+            removed_ids,
+            changed_ids,
+        )
+
+    @staticmethod
+    def _entry_refresh_identity(entry: TranslationEntry) -> tuple[object, ...]:
+        return ("key", entry.key, entry.context) if entry.key and entry.key != entry.source else (
+            "path",
+            *entry.key_path,
+        )
+
+    @staticmethod
+    def _restore_import_mapping(document: ProjectDocument) -> ImportFieldMapping:
+        settings = document.import_settings
+        if document.source_format == "json":
+            if not settings:
+                return None
+            return JsonFieldMapping(
+                str(settings["source_field"]),
+                str(settings["target_field"]),
+                str(settings["key_field"]) if settings.get("key_field") else None,
+                bool(settings.get("import_existing_translations", True)),
+            )
+        if document.source_format == "csv":
+            if not settings:
+                raise ValueError(
+                    f"CSV mapping is not recorded for {document.source_path!r}"
+                )
+            return CsvFieldMapping(
+                str(settings["source_field"]),
+                str(settings["target_field"]),
+                str(settings["key_field"]) if settings.get("key_field") else None,
+                bool(settings.get("import_existing_translations", True)),
+            )
+        if document.source_format == "xml":
+            raw_names = settings.get("attribute_names", [])
+            names = tuple(str(name) for name in raw_names) if isinstance(raw_names, list) else ()
+            return XmlFieldMapping(names)
+        if document.source_format == "po":
+            return None
+        raise ValueError(f"Unsupported project document format: {document.source_format!r}")
 
     def inspect_json_fields(self, path: Path) -> tuple[str, ...]:
         return self._json_importer.inspect_fields(path)
@@ -310,7 +685,9 @@ class ProjectWorkspace:
             project = self._json_importer.import_file(
                 path, source_language, target_language, json_mapping
             )
-            project.configure_single_document(path, "json")
+            project.configure_single_document(
+                path, "json", self._serialize_import_mapping(field_mapping)
+            )
             return project
         if suffix in {".csv", ".tsv"}:
             if self._csv_importer is None or not isinstance(field_mapping, CsvFieldMapping):
@@ -318,7 +695,9 @@ class ProjectWorkspace:
             project = self._csv_importer.import_file(
                 path, source_language, target_language, field_mapping
             )
-            project.configure_single_document(path, "csv")
+            project.configure_single_document(
+                path, "csv", self._serialize_import_mapping(field_mapping)
+            )
             return project
         if suffix == ".po":
             if self._po_importer is None:
@@ -335,9 +714,24 @@ class ProjectWorkspace:
             project = self._xml_importer.import_file(
                 path, source_language, target_language, xml_mapping
             )
-            project.configure_single_document(path, "xml")
+            project.configure_single_document(
+                path, "xml", self._serialize_import_mapping(field_mapping)
+            )
             return project
         raise ValueError(f"Unsupported localization file format: {path.suffix or path.name}")
+
+    @staticmethod
+    def _serialize_import_mapping(mapping: ImportFieldMapping) -> dict[str, object]:
+        if isinstance(mapping, (JsonFieldMapping, CsvFieldMapping)):
+            return {
+                "source_field": mapping.source_field,
+                "target_field": mapping.target_field,
+                "key_field": mapping.key_field,
+                "import_existing_translations": mapping.import_existing_translations,
+            }
+        if isinstance(mapping, XmlFieldMapping):
+            return {"attribute_names": list(mapping.attribute_names)}
+        return {}
 
     def inspect_xml_attribute_names(self, path: Path) -> tuple[str, ...]:
         if self._xml_importer is None:
@@ -352,10 +746,40 @@ class ProjectWorkspace:
         self._session = opened.session
         return self._project
 
+    @staticmethod
+    def backup_path(path: Path) -> Path:
+        return path.with_suffix(f"{path.suffix}.bak")
+
+    def open_backup(self, original_path: Path) -> Project:
+        """Open the automatic backup as an unsaved recovery copy."""
+        backup_path = self.backup_path(original_path)
+        opened = OpenProjectFile(
+            self._project_container, self._repository_factory
+        ).execute(backup_path)
+        opened.session.container_path = None
+        opened.session.metadata["recovered_from"] = str(original_path)
+        repository = self._repository_factory.create(opened.session.database_path)
+        repository.mark_project_dirty(opened.project.id)
+        opened.project.dirty = True
+        self._project = opened.project
+        self._session = opened.session
+        return self._project
+
     def edit_translation(self, entry_id: str, translation: str | None) -> TranslationEntry:
         repository = self._repository()
+        previous_entry = repository.get_entry(self.project.id, entry_id)
+        previous_issues = {
+            entry_id: tuple(
+                ValidationIssue(issue.code, issue.message)
+                for issue in repository.list_validation_issues(self.project.id)
+                if issue.entry_id == entry_id
+            )
+        }
         entry = EditTranslation(repository, glossary=self._glossary).execute(
             self.project.id, entry_id, translation
+        )
+        repository.record_translation_operation(
+            self.project.id, (previous_entry,), previous_issues, "Edit translation"
         )
         self._replace_entry(entry)
         return entry
@@ -381,11 +805,28 @@ class ProjectWorkspace:
         self, search_text: str, replacement_text: str
     ) -> tuple[str, ...]:
         repository = self._repository()
+        candidate_ids = tuple(
+            entry.id
+            for entry in self.project.entries
+            if not entry.locked
+            and entry.translation is not None
+            and search_text in entry.translation
+        )
+        previous_entries, previous_issues = self._operation_snapshot(
+            repository, candidate_ids
+        )
         updated_entry_ids = ReplaceTranslations(
             repository,
             translation_memory=self._translation_memory,
             glossary=self._glossary,
         ).execute(self.project.id, search_text, replacement_text)
+        self._record_operation_for_updated_entries(
+            repository,
+            updated_entry_ids,
+            previous_entries,
+            previous_issues,
+            "Replace translations",
+        )
         self._reload(repository)
         return updated_entry_ids
 
@@ -398,12 +839,28 @@ class ProjectWorkspace:
         self, entry_id: str, translation: str
     ) -> tuple[str, ...]:
         repository = self._repository()
-        updated_entry_ids = ApplyTranslationToMatches(
+        apply_to_matches = ApplyTranslationToMatches(
             repository,
             translation_memory=self._translation_memory,
             glossary=self._glossary,
-        ).execute(self.project.id, entry_id, translation)
+        )
+        matching_entry_ids = apply_to_matches.matching_entry_ids(
+            self.project.id, entry_id
+        )
+        previous_entries, previous_issues = self._operation_snapshot(
+            repository, matching_entry_ids
+        )
+        updated_entry_ids = apply_to_matches.execute(
+            self.project.id, entry_id, translation
+        )
         ValidateProject(repository, glossary=self._glossary).execute(self.project.id)
+        self._record_operation_for_updated_entries(
+            repository,
+            updated_entry_ids,
+            previous_entries,
+            previous_issues,
+            "Apply translation to matches",
+        )
         self._reload(repository)
         return updated_entry_ids
 
@@ -417,17 +874,26 @@ class ProjectWorkspace:
             raise ModelUnavailableError("No LLM backend is configured")
         repository = self._repository()
         reviewer = ReviewTranslations(repository, self._llm_client)
-        settings = self.project.model_settings
+        reviewable_ids = {
+            entry_id
+            for entry_id in entry_ids
+            if repository.get_entry(self.project.id, entry_id).translation is not None
+        }
+        previous_entries, previous_issues = self._operation_snapshot(
+            repository, tuple(reviewable_ids)
+        )
+        settings = self.resolve_model_settings()
         report_progress = progress_callback or _ignore_progress
         is_cancelled = cancellation_check or _never_cancel
         reviewed_entries = 0
+        changed_entry_ids: list[str] = []
         issue_count = 0
+        cancelled = False
         report_progress(0, len(entry_ids))
         for offset in range(0, len(entry_ids), settings.batch_size):
             if is_cancelled():
-                if reviewed_entries:
-                    self._reload(repository)
-                return ReviewBatchResult(reviewed_entries, issue_count, True)
+                cancelled = True
+                break
             batch_entry_ids = entry_ids[offset : offset + settings.batch_size]
             issue_count += reviewer.execute(
                 self.project.id,
@@ -435,29 +901,80 @@ class ProjectWorkspace:
                 settings.effective_review_model,
                 settings.timeout_seconds,
                 settings.review_prompt,
+                settings.review_reasoning,
+            )
+            changed_entry_ids.extend(
+                entry_id for entry_id in batch_entry_ids if entry_id in reviewable_ids
             )
             reviewed_entries += len(batch_entry_ids)
             report_progress(reviewed_entries, len(entry_ids))
-        if reviewed_entries:
+        self._record_operation_for_updated_entries(
+            repository,
+            changed_entry_ids,
+            previous_entries,
+            previous_issues,
+            "Review translations",
+        )
+        if changed_entry_ids:
             self._reload(repository)
-        return ReviewBatchResult(reviewed_entries, issue_count)
+        return ReviewBatchResult(reviewed_entries, issue_count, cancelled)
 
     def dismiss_ai_review_issue(self, entry_id: str) -> None:
-        DismissAiReviewIssue(self._repository()).execute(self.project.id, entry_id)
+        repository = self._repository()
+        previous_entries, previous_issues = self._operation_snapshot(
+            repository, (entry_id,)
+        )
+        had_ai_issue = any(
+            issue.code is ValidationCode.AI_REVIEW
+            for issue in previous_issues[entry_id]
+        )
+        DismissAiReviewIssue(repository).execute(self.project.id, entry_id)
+        if had_ai_issue:
+            repository.record_translation_operation(
+                self.project.id,
+                previous_entries,
+                previous_issues,
+                "Dismiss AI review issue",
+            )
         self.project.dirty = True
 
     def dismiss_ai_review_issues(self, entry_ids: Sequence[str]) -> int:
-        dismissed_count = DismissAiReviewIssues(self._repository()).execute(
+        repository = self._repository()
+        previous_entries, previous_issues = self._operation_snapshot(
+            repository, entry_ids
+        )
+        affected_entry_ids = tuple(
+            entry_id
+            for entry_id, issues in previous_issues.items()
+            if any(issue.code is ValidationCode.AI_REVIEW for issue in issues)
+        )
+        dismissed_count = DismissAiReviewIssues(repository).execute(
             self.project.id, entry_ids
         )
         if dismissed_count:
+            self._record_operation_for_updated_entries(
+                repository,
+                affected_entry_ids,
+                previous_entries,
+                previous_issues,
+                "Dismiss AI review issues",
+            )
             self.project.dirty = True
         return dismissed_count
 
     def set_entry_approval(self, entry_id: str, approved: bool) -> TranslationEntry:
         repository = self._repository()
+        previous_entries, previous_issues = self._operation_snapshot(
+            repository, (entry_id,)
+        )
         entry = SetEntryApproval(repository).execute(
             self.project.id, entry_id, approved
+        )
+        repository.record_translation_operation(
+            self.project.id,
+            previous_entries,
+            previous_issues,
+            "Approve translation" if approved else "Reopen translation",
         )
         self._reload(repository)
         if approved:
@@ -466,7 +983,16 @@ class ProjectWorkspace:
 
     def set_entry_locked(self, entry_id: str, locked: bool) -> TranslationEntry:
         repository = self._repository()
+        previous_entries, previous_issues = self._operation_snapshot(
+            repository, (entry_id,)
+        )
         entry = SetEntryLocked(repository).execute(self.project.id, entry_id, locked)
+        repository.record_translation_operation(
+            self.project.id,
+            previous_entries,
+            previous_issues,
+            "Lock translation" if locked else "Unlock translation",
+        )
         self._reload(repository)
         return entry
 
@@ -474,8 +1000,18 @@ class ProjectWorkspace:
         self, entry_ids: Sequence[str], approved: bool
     ) -> tuple[str, ...]:
         repository = self._repository()
+        previous_entries, previous_issues = self._operation_snapshot(
+            repository, entry_ids
+        )
         updated_entry_ids = SetEntriesApproval(repository).execute(
             self.project.id, entry_ids, approved
+        )
+        self._record_operation_for_updated_entries(
+            repository,
+            updated_entry_ids,
+            previous_entries,
+            previous_issues,
+            "Approve translations" if approved else "Reopen translations",
         )
         self._reload(repository)
         if approved:
@@ -502,11 +1038,61 @@ class ProjectWorkspace:
         self, entry_ids: Sequence[str], locked: bool
     ) -> tuple[str, ...]:
         repository = self._repository()
+        previous_entries, previous_issues = self._operation_snapshot(
+            repository, entry_ids
+        )
         updated_entry_ids = SetEntriesLocked(repository).execute(
             self.project.id, entry_ids, locked
         )
+        self._record_operation_for_updated_entries(
+            repository,
+            updated_entry_ids,
+            previous_entries,
+            previous_issues,
+            "Lock translations" if locked else "Unlock translations",
+        )
         self._reload(repository)
         return updated_entry_ids
+
+    def _operation_snapshot(
+        self,
+        repository: ProjectRepository,
+        entry_ids: Sequence[str],
+    ) -> tuple[tuple[TranslationEntry, ...], dict[str, tuple[ValidationIssue, ...]]]:
+        selected_ids = tuple(dict.fromkeys(entry_ids))
+        entries = tuple(
+            repository.get_entry(self.project.id, entry_id)
+            for entry_id in selected_ids
+        )
+        selected = set(selected_ids)
+        issues: dict[str, list[ValidationIssue]] = {
+            entry_id: [] for entry_id in selected_ids
+        }
+        for issue in repository.list_validation_issues(self.project.id):
+            if issue.entry_id in selected:
+                issues[issue.entry_id].append(
+                    ValidationIssue(issue.code, issue.message)
+                )
+        return entries, {
+            entry_id: tuple(entry_issues)
+            for entry_id, entry_issues in issues.items()
+        }
+
+    def _record_operation_for_updated_entries(
+        self,
+        repository: ProjectRepository,
+        updated_entry_ids: Sequence[str],
+        previous_entries: Sequence[TranslationEntry],
+        previous_issues: Mapping[str, Sequence[ValidationIssue]],
+        label: str,
+    ) -> None:
+        updated = set(updated_entry_ids)
+        repository.record_translation_operation(
+            self.project.id,
+            tuple(entry for entry in previous_entries if entry.id in updated),
+            previous_issues,
+            label,
+        )
 
     def entry_revisions(
         self, entry_id: str, limit: int = 50
@@ -515,15 +1101,27 @@ class ProjectWorkspace:
             self.project.id, entry_id, limit
         )
 
+    def project_operations(self, limit: int = 50) -> tuple[ProjectOperation, ...]:
+        return self._repository().list_translation_operations(self.project.id, limit)
+
     def restore_entry_revision(
         self, entry_id: str, revision_id: int
     ) -> TranslationEntry:
         repository = self._repository()
+        previous_entries, previous_issues = self._operation_snapshot(
+            repository, (entry_id,)
+        )
         entry = RestoreEntryRevision(
             repository,
             translation_memory=self._translation_memory,
             glossary=self._glossary,
         ).execute(self.project.id, entry_id, revision_id)
+        repository.record_translation_operation(
+            self.project.id,
+            previous_entries,
+            previous_issues,
+            "Restore translation revision",
+        )
         self._replace_entry(entry)
         return entry
 
@@ -667,6 +1265,21 @@ class ProjectWorkspace:
 
     def export_all_documents(self, destination_directory: Path) -> tuple[Path, ...]:
         """Export every project document using its original format and relative path."""
+        return self.export_documents(
+            tuple(document.id for document in self.project.documents), destination_directory
+        )
+
+    def export_documents(
+        self, document_ids: Sequence[str] | set[str] | frozenset[str], destination_directory: Path
+    ) -> tuple[Path, ...]:
+        """Export selected documents using their original formats and relative paths."""
+        selected_ids = frozenset(document_ids)
+        if not selected_ids:
+            raise ValueError("Select at least one project file to export")
+        known_ids = {document.id for document in self.project.documents}
+        unknown_ids = selected_ids - known_ids
+        if unknown_ids:
+            raise ValueError("One or more selected project files do not exist")
         destination_directory.parent.mkdir(parents=True, exist_ok=True)
         exported_relative_paths: list[Path] = []
         with tempfile.TemporaryDirectory(
@@ -674,6 +1287,8 @@ class ProjectWorkspace:
         ) as temporary_name:
             temporary_directory = Path(temporary_name)
             for document in self.project.documents:
+                if document.id not in selected_ids:
+                    continue
                 relative_path = Path(document.source_path)
                 if relative_path.is_absolute() or ".." in relative_path.parts:
                     raise ValueError(
@@ -694,6 +1309,7 @@ class ProjectWorkspace:
                     documents=[document],
                 )
                 staged_path = temporary_directory / relative_path
+                staged_path.parent.mkdir(parents=True, exist_ok=True)
                 self._export_document(document_project, document.source_format, staged_path)
                 exported_relative_paths.append(relative_path)
 
@@ -767,6 +1383,15 @@ class ProjectWorkspace:
             raise ModelUnavailableError("No LLM backend is configured")
         return self._llm_client.list_models()
 
+    def ollama_health_check(self) -> bool:
+        if self._llm_client is None:
+            return False
+        return self._llm_client.health_check()
+
+    def set_llm_client(self, llm_client: LLMClient) -> None:
+        """Replace the configured local backend (for example after changing its URL)."""
+        self._llm_client = llm_client
+
     def pull_model(self, model: str) -> None:
         if self._llm_client is None:
             raise ModelUnavailableError("No LLM backend is configured")
@@ -776,6 +1401,16 @@ class ProjectWorkspace:
         repository = self._repository()
         self._project = UpdateModelSettings(repository).execute(self.project.id, settings)
         return self._project
+
+    def set_model_settings_override_enabled(self, enabled: bool) -> Project:
+        repository = self._repository()
+        project = repository.get(self.project.id)
+        if enabled and not project.model_settings_override_enabled:
+            project.update_model_settings(self.resolve_model_settings(project))
+        project.set_model_settings_override_enabled(enabled)
+        repository.save(project)
+        self._project = project
+        return project
 
     def validation_issues(self) -> tuple[EntryValidationIssue, ...]:
         repository = self._repository()
@@ -825,7 +1460,7 @@ class ProjectWorkspace:
                 previous_issues.setdefault(issue.entry_id, []).append(
                     ValidationIssue(issue.code, issue.message)
                 )
-        settings = self.project.model_settings
+        settings = self.resolve_model_settings()
         selected_model = model or settings.model
         translated_entry_ids: list[str] = []
         skipped_entry_ids: list[str] = []
@@ -853,6 +1488,7 @@ class ProjectWorkspace:
                 settings.timeout_seconds,
                 settings.system_prompt,
                 is_cancelled,
+                settings.translation_reasoning,
             )
             translated_entry_ids.extend(result.translated_entry_ids)
             skipped_entry_ids.extend(result.skipped_entry_ids)
@@ -871,6 +1507,7 @@ class ProjectWorkspace:
             self.project.id,
             tuple(previous_entries[entry_id] for entry_id in changed_entry_ids),
             previous_issues,
+            "Translate entries",
         )
         self._reload(repository)
         return BatchResult(
@@ -883,11 +1520,28 @@ class ProjectWorkspace:
     def can_undo_last_translation(self) -> bool:
         return self._repository().has_undoable_translation_operation(self.project.id)
 
+    def next_undo_operation_label(self) -> str | None:
+        return self._repository().next_undo_operation_label(self.project.id)
+
     def undo_last_translation(self) -> tuple[TranslationEntry, ...]:
         repository = self._repository()
         restored = repository.undo_last_translation_operation(self.project.id)
         if not restored:
             raise ValueError("There is no translation operation to undo")
+        self._reload(repository)
+        return restored
+
+    def can_redo_last_translation(self) -> bool:
+        return self._repository().has_redoable_translation_operation(self.project.id)
+
+    def next_redo_operation_label(self) -> str | None:
+        return self._repository().next_redo_operation_label(self.project.id)
+
+    def redo_last_translation(self) -> tuple[TranslationEntry, ...]:
+        repository = self._repository()
+        restored = repository.redo_last_translation_operation(self.project.id)
+        if not restored:
+            raise ValueError("There is no translation operation to redo")
         self._reload(repository)
         return restored
 

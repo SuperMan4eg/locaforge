@@ -1,0 +1,6 @@
+{
+  "metadata": {"locale": "xx", "name": "My language", "fallback": "en", "format_version": 1},
+  "messages": {
+    "settings.title": "Settings"
+  }
+}

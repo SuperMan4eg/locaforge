@@ -32,7 +32,15 @@ class CreateProjectFromXml:
         project = self._xml_importer.import_file(
             source_path, source_language, target_language, field_mapping
         )
-        project.configure_single_document(source_path, "xml")
+        project.configure_single_document(
+            source_path,
+            "xml",
+            {
+                "attribute_names": list(field_mapping.attribute_names)
+                if field_mapping is not None
+                else []
+            },
+        )
         session = self._project_container.create(
             {
                 "project_id": project.id,

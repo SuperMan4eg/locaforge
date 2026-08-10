@@ -7,6 +7,7 @@ from pathlib import Path
 
 from locaforge.domain.document import ProjectDocument
 from locaforge.domain.entry import TranslationEntry
+from locaforge.domain.project_profile import ProjectProfile
 from locaforge.domain.settings import ModelSettings
 
 
@@ -21,8 +22,10 @@ class Project:
     entries: list[TranslationEntry] = field(default_factory=list)
     source_document: object | None = None
     model_settings: ModelSettings = field(default_factory=ModelSettings)
+    model_settings_override_enabled: bool = False
     dirty: bool = False
     documents: list[ProjectDocument] = field(default_factory=list)
+    profile: ProjectProfile = field(default_factory=ProjectProfile)
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -31,7 +34,7 @@ class Project:
             raise ValueError("Project.name must not be empty")
         if not self.source_language or not self.target_language:
             raise ValueError("Project languages must not be empty")
-        if not self.documents:
+        if not self.documents and (self.source_document is not None or self.entries):
             self.documents.append(
                 ProjectDocument(
                     id=f"{self.id}:document:0",
@@ -49,9 +52,16 @@ class Project:
                 entry.document_id = self.documents[0].id
             elif entry.document_id not in document_ids:
                 raise ValueError(f"Entry {entry.id!r} belongs to an unknown document")
-        self.source_document = self.documents[0].source_document
+        self.source_document = (
+            self.documents[0].source_document if self.documents else None
+        )
 
-    def configure_single_document(self, source_path: Path, source_format: str) -> None:
+    def configure_single_document(
+        self,
+        source_path: Path,
+        source_format: str,
+        import_settings: dict[str, object] | None = None,
+    ) -> None:
         """Attach imported-file metadata while retaining the legacy export surface."""
         document = ProjectDocument(
             id=f"{self.id}:document:0",
@@ -59,6 +69,8 @@ class Project:
             source_path=source_path.name,
             source_format=source_format,
             source_document=self.source_document,
+            source_location=str(source_path.resolve(strict=False)),
+            import_settings=dict(import_settings or {}),
         )
         self.documents = [document]
         for entry in self.entries:
@@ -73,6 +85,16 @@ class Project:
     def add_entry(self, entry: TranslationEntry) -> None:
         if any(existing.id == entry.id for existing in self.entries):
             raise ValueError(f"An entry with id {entry.id!r} already exists")
+        if not self.documents:
+            self.documents.append(
+                ProjectDocument(
+                    id=f"{self.id}:document:0",
+                    name=self.name,
+                    source_path=self.name,
+                    source_format="legacy",
+                    source_document=self.source_document,
+                )
+            )
         if entry.document_id is None:
             entry.document_id = self.documents[0].id
         elif not any(document.id == entry.document_id for document in self.documents):
@@ -97,4 +119,8 @@ class Project:
 
     def update_model_settings(self, settings: ModelSettings) -> None:
         self.model_settings = settings
+        self.dirty = True
+
+    def set_model_settings_override_enabled(self, enabled: bool) -> None:
+        self.model_settings_override_enabled = enabled
         self.dirty = True

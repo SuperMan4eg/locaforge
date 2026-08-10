@@ -8,6 +8,17 @@ permissions:
   contents: read
 
 jobs:
+  documentation:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Check language pairs and links
+        run: python scripts/check_docs.py
+
   quality:
     name: Quality (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -88,7 +99,7 @@ jobs:
   release:
     name: Publish GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [quality, package, windows-portable]
+    needs: [documentation, quality, package, windows-portable]
     runs-on: ubuntu-latest
     permissions:
       contents: write

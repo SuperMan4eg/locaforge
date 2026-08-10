@@ -38,3 +38,17 @@ def test_dialog_selects_installed_model_when_configured_model_is_missing() -> No
     assert dialog.model_settings().model == "installed-model"
     assert dialog.model_settings().effective_review_model == "installed-model"
     dialog.close()
+
+
+def test_dialog_returns_separate_reasoning_modes() -> None:
+    application = QApplication.instance() or QApplication([])
+    dialog = OllamaSettingsDialog(
+        ModelSettings(translation_reasoning="low", review_reasoning="high"),
+        ("qwen3",),
+        "Connected",
+    )
+
+    assert application is not None
+    assert dialog.model_settings().translation_reasoning == "low"
+    assert dialog.model_settings().review_reasoning == "high"
+    dialog.close()

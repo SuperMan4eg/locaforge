@@ -20,6 +20,7 @@ class TranslationRequest:
     entries: tuple[TranslationRequestItem, ...]
     prompt: str
     timeout_seconds: float
+    reasoning: str = "off"
 
 
 @dataclass(frozen=True, slots=True)

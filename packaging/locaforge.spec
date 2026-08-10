@@ -9,7 +9,7 @@ analysis = Analysis(
     [str(project_root / "src" / "locaforge" / "__main__.py")],
     pathex=[str(project_root / "src")],
     binaries=[],
-    datas=[],
+    datas=[(str(project_root / "src" / "locaforge" / "resources" / "locales"), "locaforge/resources/locales")],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

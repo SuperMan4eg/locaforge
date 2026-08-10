@@ -6,6 +6,7 @@ from locaforge.application.dto.review import ReviewRequest, ReviewRequestItem
 from locaforge.application.dto.validation import ValidationCode, ValidationIssue
 from locaforge.application.ports.llm import LLMClient
 from locaforge.application.ports.project_repository import ProjectRepository
+from locaforge.application.services.project_context_builder import ProjectContextBuilder
 
 
 class ReviewTranslations:
@@ -20,8 +21,10 @@ class ReviewTranslations:
         model: str,
         timeout: float,
         review_prompt: str = "",
+        reasoning: str = "off",
     ) -> int:
         project = self._repository.get(project_id)
+        review_prompt = ProjectContextBuilder().combine_with_prompt(project, review_prompt)
         entries = [
             project.get_entry(entry_id)
             for entry_id in entry_ids
@@ -38,6 +41,7 @@ class ReviewTranslations:
                 ),
                 timeout,
                 review_prompt,
+                reasoning,
             )
         )
         reviewed = {result.entry_id: result for result in response.results}

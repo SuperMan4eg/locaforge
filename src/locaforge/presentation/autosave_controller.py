@@ -53,6 +53,11 @@ class AutosaveController(QObject):
     def is_pending(self) -> bool:
         return self._timer.isActive() or self._worker is not None
 
+    def set_delay(self, delay_ms: int) -> None:
+        if delay_ms < 1:
+            raise ValueError("Autosave delay must be positive")
+        self._timer.setInterval(delay_ms)
+
     def schedule(self) -> None:
         if self._worker is not None:
             self._reschedule_after_save = True

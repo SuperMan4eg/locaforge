@@ -10,11 +10,13 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QVBoxLayout,
     QWidget,
 )
+
+from locaforge.presentation.localization import tr
+from locaforge.presentation.searchable_language_combo_box import SearchableLanguageComboBox
 
 
 class ProjectSetupDialog(QDialog):
@@ -27,6 +29,7 @@ class ProjectSetupDialog(QDialog):
         source_format: str,
         mapping_description: str,
         parent: QWidget | None = None,
+        default_languages: tuple[str, str] = ("en", "ru"),
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Create LocaForge project")
@@ -45,13 +48,11 @@ class ProjectSetupDialog(QDialog):
         form.addRow("Project file", self._selectable_label(str(destination_path)))
         form.addRow("Field mapping", self._selectable_label(mapping_description))
 
-        self.source_language = QLineEdit("en", self)
-        self.source_language.setPlaceholderText("For example: en, en-US, de")
+        self.source_language = SearchableLanguageComboBox(default_languages[0], self)
         self.source_language.setToolTip(
             "Language code of the text being translated; used by models, glossary, and TM"
         )
-        self.target_language = QLineEdit("ru", self)
-        self.target_language.setPlaceholderText("For example: ru, fr, pt-BR")
+        self.target_language = SearchableLanguageComboBox(default_languages[1], self)
         self.target_language.setToolTip(
             "Language code of the resulting translation; used by models, glossary, and TM"
         )
@@ -81,22 +82,31 @@ class ProjectSetupDialog(QDialog):
         layout.addWidget(buttons)
 
     def language_pair(self) -> tuple[str, str]:
-        return self.source_language.text().strip(), self.target_language.text().strip()
+        return (
+            self.source_language.language_code() or "",
+            self.target_language.language_code() or "",
+        )
 
     def accept(self) -> None:
         source_language, target_language = self.language_pair()
         if not source_language or not target_language:
             QMessageBox.warning(
                 self,
-                "Project languages",
-                "Enter both the source language and the target language.",
+                tr("project.languages", "Project languages"),
+                tr(
+                    "project.enter_languages",
+                    "Enter both source and target languages.",
+                ),
             )
             return
         if source_language.casefold() == target_language.casefold():
             QMessageBox.warning(
                 self,
-                "Project languages",
-                "Source and target languages must be different.",
+                tr("project.languages", "Project languages"),
+                tr(
+                    "settings.languages_must_differ",
+                    "Source and target languages must be different.",
+                ),
             )
             return
         super().accept()
