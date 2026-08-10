@@ -52,12 +52,14 @@ python -m pip install -e ".[build]"
 .\scripts\build_windows.ps1
 ```
 
-Скрипт создаёт `dist/LocaForge/LocaForge.exe`, запускает `--smoke-test` и формирует архив с версией.
+Скрипт создаёт `dist/LocaForge/LocaForge.exe` и формирует архив с версией. Исполняемый файл
+поддерживает две проверки сборки: `--smoke-test` запускает и собирает интерфейс, а `--self-test`
+создаёт, редактирует, сохраняет, повторно открывает и экспортирует изолированный JSON-проект.
 
 ## CI и релизы
 
 CI запускает Ruff, mypy и pytest на Python 3.12 и 3.13, проверяет документацию, собирает wheel
-и sdist, а также собирает и проверяет Windows-архив. Тег `v<project.version>` публикует GitHub
+и sdist, а также запускает обе проверки собранного Windows-архива. Тег `v<project.version>` публикует GitHub
 Release с пакетами, portable-архивом и SHA-256 checksums.
 
 ## Checklist изменений

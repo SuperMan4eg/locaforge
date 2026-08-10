@@ -23,6 +23,7 @@ class LfprojContainer:
     _METADATA_NAME = "metadata.json"
     _FORMAT_VERSION = 2
     _SUPPORTED_FORMAT_VERSIONS = frozenset({1, 2})
+    _BACKUP_GENERATIONS = 3
 
     def __init__(self, working_root: Path) -> None:
         self._working_root = working_root
@@ -43,6 +44,11 @@ class LfprojContainer:
         working_directory = self._new_working_directory()
         try:
             with zipfile.ZipFile(path) as archive:
+                damaged_member = archive.testzip()
+                if damaged_member is not None:
+                    raise ProjectContainerError(
+                        f"Container member {damaged_member!r} failed its integrity check"
+                    )
                 member_names = set(archive.namelist())
                 required_names = {self._DATABASE_NAME, self._METADATA_NAME}
                 if not required_names.issubset(member_names):
@@ -53,6 +59,7 @@ class LfprojContainer:
                 metadata = self._read_metadata(archive)
                 self._extract_member(archive, self._DATABASE_NAME, working_directory)
                 self._extract_member(archive, self._METADATA_NAME, working_directory)
+                self._validate_database(working_directory / self._DATABASE_NAME)
         except (OSError, zipfile.BadZipFile) as error:
             shutil.rmtree(working_directory, ignore_errors=True)
             raise ProjectContainerError(f"Cannot open project container {path.name!r}") from error
@@ -94,6 +101,8 @@ class LfprojContainer:
         if not database_path.is_file():
             raise ProjectContainerError("Project database does not exist in the working copy")
 
+        self._validate_database(database_path)
+
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary_path = destination.with_suffix(f"{destination.suffix}.tmp")
         backup_path = destination.with_suffix(f"{destination.suffix}.bak")
@@ -112,6 +121,7 @@ class LfprojContainer:
                     ),
                 )
             if create_backup and destination.exists():
+                self._rotate_backups(backup_path)
                 shutil.copy2(destination, backup_path)
             os.replace(temporary_path, destination)
         except (OSError, TypeError, zipfile.BadZipFile) as error:
@@ -122,6 +132,30 @@ class LfprojContainer:
             temporary_path.unlink(missing_ok=True)
 
         session.container_path = destination
+
+    def _rotate_backups(self, newest_backup: Path) -> None:
+        for generation in range(self._BACKUP_GENERATIONS - 1, 0, -1):
+            source = (
+                newest_backup
+                if generation == 1
+                else newest_backup.with_name(f"{newest_backup.name}.{generation - 1}")
+            )
+            destination = newest_backup.with_name(f"{newest_backup.name}.{generation}")
+            if source.exists():
+                os.replace(source, destination)
+
+    @staticmethod
+    def _validate_database(database_path: Path) -> None:
+        try:
+            connection = sqlite3.connect(database_path)
+            try:
+                result = connection.execute("PRAGMA quick_check").fetchall()
+            finally:
+                connection.close()
+        except sqlite3.DatabaseError as error:
+            raise ProjectContainerError("Project database failed its integrity check") from error
+        if result != [("ok",)]:
+            raise ProjectContainerError("Project database failed its integrity check")
 
     def _new_working_directory(self) -> Path:
         for index in range(1, 10_000):

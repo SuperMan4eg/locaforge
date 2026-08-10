@@ -6,7 +6,7 @@ LocaForge is a local-first desktop CAT platform for translating games, applicati
 and software with local language models. Source files stay on the user's computer and
 are never modified in place.
 
-> The project is under active development. Current version: `0.4.0`.
+> The project is under active development. Current version: `0.4.1`.
 
 ## Features
 
@@ -27,7 +27,7 @@ are never modified in place.
 
 ### Windows portable build
 
-Download `LocaForge-0.4.0-windows-x64.zip` from the
+Download `LocaForge-0.4.1-windows-x64.zip` from the
 [latest release](https://github.com/SuperMan4eg/locaforge/releases/latest), extract it,
 and run `LocaForge.exe`. Python is included; Ollama is installed separately.
 
@@ -59,6 +59,15 @@ Language packages are JSON files loaded from the user localization directory. St
 the generated `template.json`, translate its messages without changing their keys or named
 parameters, save it under a new name, then reload and validate it in Settings. The complete
 format and troubleshooting guide is in [Custom localization](docs/localization.md).
+
+## Diagnostics and privacy
+
+The Logs panel provides **Copy diagnostics** for support requests. The report contains application,
+Python, PySide, Qt, and OS versions plus aggregate project counts and formats. It never includes
+project names, filesystem paths, source strings, translations, prompts, or log contents. Review any
+manually copied log messages separately before sharing them. After an unexpected application error,
+the report also includes the short incident ID shown in the error dialog so support can correlate it
+with the local traceback without putting that traceback on the clipboard.
 
 ## Development
 

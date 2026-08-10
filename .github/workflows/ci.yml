@@ -81,6 +81,13 @@ jobs:
           if ($process.ExitCode -ne 0) {
             throw "LocaForge.exe smoke test failed with exit code $($process.ExitCode)"
           }
+      - name: Test packaged project lifecycle
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath ".\dist\LocaForge\LocaForge.exe" -ArgumentList "--self-test" -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "LocaForge.exe project lifecycle test failed with exit code $($process.ExitCode)"
+          }
       - name: Locate portable archive
         id: archive
         shell: pwsh

@@ -6,6 +6,22 @@ All notable changes to LocaForge are documented in this file.
 
 ## Unreleased
 
+## 0.4.1 — 2026-08-10
+
+- Project containers now verify ZIP members and SQLite integrity before opening or saving.
+- Manual saves retain three generations of automatic backups while keeping `.lfproj.bak` as
+  the newest recovery copy.
+- Windows CI now exercises a complete create, edit, save, reopen, and export lifecycle through
+  the packaged executable in addition to launching its UI.
+- SQLite repositories now close every short-lived connection deterministically, preventing locked
+  working databases during cleanup and packaged lifecycle checks.
+- The Logs panel can copy a privacy-preserving diagnostic report containing runtime versions and
+  aggregate project state, never project names, paths, strings, translations, prompts, or logs.
+- Unhandled failures receive a short incident ID shared by the local traceback, safe error dialog,
+  and diagnostic report; packaged self-tests suppress dialogs so failures cannot stall CI.
+- Python wheel builds no longer duplicate bundled localization resources under recent Hatchling
+  versions; wheel and source archives are verified with the 0.4.1 release artifacts.
+
 ## 0.4.0 — 2026-08-10
 
 - Extended persistent Undo/Redo history to approval/reopen and lock/unlock actions,

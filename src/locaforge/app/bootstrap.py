@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
+import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QStandardPaths, QTimer
+from PySide6.QtCore import QSettings, QStandardPaths
 from PySide6.QtWidgets import QApplication
 
 from locaforge.app.exception_handler import install_exception_handler
@@ -57,6 +59,26 @@ def build_workspace(data_root: Path) -> ProjectWorkspace:
     )
 
 
+def run_self_test() -> None:
+    """Exercise a packaged build's persistent project lifecycle without user data."""
+    with tempfile.TemporaryDirectory(prefix="locaforge-self-test-") as temporary_directory:
+        root = Path(temporary_directory)
+        source_path = root / "source.json"
+        project_path = root / "self-test.lfproj"
+        export_path = root / "exported.json"
+        source_path.write_text('{"greeting": "Hello"}', encoding="utf-8")
+        workspace = build_workspace(root / "data")
+        project = workspace.create_from_json(source_path, project_path, "en", "ru")
+        workspace.edit_translation(project.entries[0].id, "Привет")
+        workspace.save()
+        reopened = build_workspace(root / "reopened-data")
+        reopened.open(project_path)
+        reopened.export_json(export_path)
+        exported = json.loads(export_path.read_text(encoding="utf-8"))
+        if exported != {"greeting": "Привет"}:
+            raise RuntimeError("Packaged project lifecycle self-test produced invalid output")
+
+
 def main() -> int:
     application = QApplication(sys.argv)
     application.setApplicationName("LocaForge")
@@ -65,8 +87,11 @@ def main() -> int:
         QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation)
     )
     log_path = configure_logging(data_root)
-    install_exception_handler(log_path)
+    install_exception_handler(log_path, show_dialog="--self-test" not in sys.argv)
     logging.getLogger(LOGGER_NAME).info("Starting LocaForge")
+    if "--self-test" in sys.argv:
+        run_self_test()
+        return 0
     settings_store = QSettings()
     settings = ApplicationSettingsStore(settings_store).load()
     localization = LocalizationManager(data_root / "localizations", settings.ui_locale)
@@ -78,5 +103,8 @@ def main() -> int:
     )
     window.show()
     if "--smoke-test" in sys.argv:
-        QTimer.singleShot(1000, application.quit)
+        application.processEvents()
+        window.close()
+        application.processEvents()
+        return 0
     return application.exec()

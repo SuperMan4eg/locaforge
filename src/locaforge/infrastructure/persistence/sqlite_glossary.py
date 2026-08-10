@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 
 from locaforge.domain.glossary import GlossaryTerm
@@ -131,5 +132,11 @@ class SQLiteGlossary:
                 """
             )
 
-    def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self._database_path)
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        connection = sqlite3.connect(self._database_path)
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
