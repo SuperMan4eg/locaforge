@@ -37,7 +37,17 @@ class CreateProjectFromJson:
         project = self._json_importer.import_file(
             source_path, source_language, target_language, field_mapping
         )
-        project.configure_single_document(source_path, "json")
+        import_settings: dict[str, object] = (
+            {
+                "source_field": field_mapping.source_field,
+                "target_field": field_mapping.target_field,
+                "key_field": field_mapping.key_field,
+                "import_existing_translations": field_mapping.import_existing_translations,
+            }
+            if field_mapping is not None
+            else {}
+        )
+        project.configure_single_document(source_path, "json", import_settings)
         session = self._project_container.create(
             {
                 "project_id": project.id,

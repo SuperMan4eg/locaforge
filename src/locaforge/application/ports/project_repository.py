@@ -7,7 +7,7 @@ from typing import Protocol
 
 from locaforge.application.dto.validation import EntryValidationIssue, ValidationIssue
 from locaforge.domain.entry import TranslationEntry
-from locaforge.domain.history import EntryRevision
+from locaforge.domain.history import EntryRevision, ProjectOperation
 from locaforge.domain.project import Project
 
 
@@ -32,6 +32,15 @@ class ProjectRepository(Protocol):
 
     def update_entry_statuses(
         self, project_id: str, entries: Sequence[TranslationEntry]
+    ) -> None: ...
+
+    def remove_documents(self, project_id: str, document_ids: Sequence[str]) -> None: ...
+
+    def remove_entry_artifacts(
+        self,
+        project_id: str,
+        removed_entry_ids: Sequence[str],
+        reset_validation_entry_ids: Sequence[str] = (),
     ) -> None: ...
 
     def list_entry_revisions(
@@ -59,10 +68,25 @@ class ProjectRepository(Protocol):
         project_id: str,
         previous_entries: Sequence[TranslationEntry],
         previous_issues: Mapping[str, Sequence[ValidationIssue]],
+        label: str,
     ) -> None: ...
+
+    def next_undo_operation_label(self, project_id: str) -> str | None: ...
+
+    def next_redo_operation_label(self, project_id: str) -> str | None: ...
+
+    def list_translation_operations(
+        self, project_id: str, limit: int = 50
+    ) -> tuple[ProjectOperation, ...]: ...
 
     def has_undoable_translation_operation(self, project_id: str) -> bool: ...
 
     def undo_last_translation_operation(
+        self, project_id: str
+    ) -> tuple[TranslationEntry, ...]: ...
+
+    def has_redoable_translation_operation(self, project_id: str) -> bool: ...
+
+    def redo_last_translation_operation(
         self, project_id: str
     ) -> tuple[TranslationEntry, ...]: ...

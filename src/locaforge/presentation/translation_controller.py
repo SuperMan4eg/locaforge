@@ -53,7 +53,7 @@ class TranslationController(QObject):
     def start(self, entry_ids: tuple[str, ...]) -> bool:
         if not entry_ids or self.is_running:
             return False
-        model = self._workspace.project.model_settings.model
+        model = self._workspace.resolve_model_settings().model
         if not self._ensure_model(model):
             return False
         worker = BatchTranslationWorker(

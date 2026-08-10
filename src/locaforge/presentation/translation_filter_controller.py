@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from locaforge.domain.document import ProjectDocument
 from locaforge.domain.entry import TranslationEntry
+from locaforge.presentation.localization import tr, tr_source
 from locaforge.presentation.translation_filter_proxy import TranslationFilterProxyModel
 from locaforge.presentation.translation_table_model import TranslationTableModel
 
@@ -158,7 +159,7 @@ class TranslationFilterController(QObject):
     def update_entries(self, entries: Sequence[TranslationEntry]) -> None:
         counts = Counter(entry.status.value for entry in entries)
         for status, action in self._status_actions.items():
-            action.setText(f"{self._status_labels[status]} ({counts[status]})")
+            action.setText(f"{tr_source(self._status_labels[status])} ({counts[status]})")
         self._update_status_label()
         self.refresh_result_count()
         self._update_controls()
@@ -167,7 +168,7 @@ class TranslationFilterController(QObject):
         selected_id = self.document.currentData()
         self.document.blockSignals(True)
         self.document.clear()
-        self.document.addItem("All files", None)
+        self.document.addItem(tr_source("All files"), None)
         for document in documents:
             self.document.addItem(document.name, document.id)
         selected_index = self.document.findData(selected_id)
@@ -175,9 +176,27 @@ class TranslationFilterController(QObject):
         self.document.blockSignals(False)
         self._apply_document_filter()
 
+    def set_document_ids(self, document_ids: Collection[str]) -> None:
+        """Apply a file selection coming from the project explorer."""
+        selected = tuple(document_ids)
+        self.document.blockSignals(True)
+        if len(selected) == 1:
+            index = self.document.findData(selected[0])
+            self.document.setCurrentIndex(max(0, index))
+        else:
+            self.document.setCurrentIndex(0)
+        self.document.blockSignals(False)
+        self._proxy_model.set_document_ids(selected)
+        self._update_controls()
+
     def refresh_result_count(self) -> None:
         self.result_count.setText(
-            f"{self._proxy_model.rowCount()} / {self._source_model.rowCount()} entries"
+            tr(
+                "filter.entry_count",
+                "{visible} / {total} entries",
+                visible=self._proxy_model.rowCount(),
+                total=self._source_model.rowCount(),
+            )
         )
 
     def _set_search_filter(self, text: str) -> None:
@@ -229,16 +248,20 @@ class TranslationFilterController(QObject):
     def _update_status_label(self) -> None:
         selected = [action for action in self._status_actions.values() if action.isChecked()]
         if not selected:
-            self.status_button.setText("All statuses")
+            self.status_button.setText(tr_source("All statuses"))
         elif len(selected) == 1:
             status = next(
                 status
                 for status, action in self._status_actions.items()
                 if action is selected[0]
             )
-            self.status_button.setText(self._status_labels[status])
+            self.status_button.setText(tr_source(self._status_labels[status]))
         else:
-            self.status_button.setText(f"{len(selected)} statuses")
+            self.status_button.setText(
+                tr("filter.status_count", "{count} statuses", count=len(selected))
+            )
 
     def _update_issue_label(self) -> None:
-        self.issues_button.setText(f"Issues only ({len(self._issue_entry_ids)})")
+        self.issues_button.setText(
+            tr("filter.issue_count", "Issues only ({count})", count=len(self._issue_entry_ids))
+        )

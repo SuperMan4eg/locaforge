@@ -18,6 +18,7 @@ class ReviewRequest:
     entries: tuple[ReviewRequestItem, ...]
     timeout_seconds: float
     prompt: str = ""
+    reasoning: str = "off"
 
 
 @dataclass(frozen=True, slots=True)

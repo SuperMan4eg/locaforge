@@ -24,7 +24,7 @@ class TranslationFilterProxyModel(QSortFilterProxyModel):
         self._search_text = ""
         self._search_field = "all"
         self._statuses: frozenset[str] = frozenset()
-        self._document_id: str | None = None
+        self._document_ids: frozenset[str] = frozenset()
         self._issue_entry_ids: frozenset[str] | None = None
         self.setDynamicSortFilter(True)
 
@@ -50,7 +50,10 @@ class TranslationFilterProxyModel(QSortFilterProxyModel):
         self._invalidate_rows()
 
     def set_document_id(self, document_id: str | None) -> None:
-        self._document_id = document_id
+        self.set_document_ids(()) if document_id is None else self.set_document_ids((document_id,))
+
+    def set_document_ids(self, document_ids: Collection[str]) -> None:
+        self._document_ids = frozenset(document_ids)
         self._invalidate_rows()
 
     def _invalidate_rows(self) -> None:
@@ -66,16 +69,19 @@ class TranslationFilterProxyModel(QSortFilterProxyModel):
         if source_model is None:
             return False
         translation_model = cast(TranslationTableModel, source_model)
-        if self._document_id is not None:
+        if self._document_ids:
             entry = translation_model.entry_at(source_row)
-            if entry.document_id != self._document_id:
+            if entry.document_id not in self._document_ids:
                 return False
         if self._issue_entry_ids is not None:
             entry = translation_model.entry_at(source_row)
             if entry.id not in self._issue_entry_ids:
                 return False
         if self._statuses:
-            status = source_model.data(source_model.index(source_row, 3, source_parent))
+            status = source_model.data(
+                source_model.index(source_row, 3, source_parent),
+                TranslationTableModel.status_role,
+            )
             if status not in self._statuses:
                 return False
         if not self._search_text:
@@ -100,8 +106,8 @@ class TranslationFilterProxyModel(QSortFilterProxyModel):
         if left.column() == 3:
             source_model = self.sourceModel()
             if source_model is not None:
-                left_status = source_model.data(left)
-                right_status = source_model.data(right)
+                left_status = source_model.data(left, TranslationTableModel.status_role)
+                right_status = source_model.data(right, TranslationTableModel.status_role)
                 return self._STATUS_ORDER.get(str(left_status), 99) < self._STATUS_ORDER.get(
                     str(right_status), 99
                 )

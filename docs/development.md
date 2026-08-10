@@ -1,61 +1,69 @@
-# Development
+[English](development.md) | [Русский](development.ru.md)
+
+# Development guide
 
 ## Local setup
 
-Use Python 3.12 or newer.
-
 ```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
 $env:PYTHONPATH = "src"
 $env:QT_QPA_PLATFORM = "offscreen"
 python -m pytest
 python -m ruff check src tests
 python -m mypy src
+python scripts/check_docs.py
 ```
 
-Run the desktop application after installation with:
+Run the app with `locaforge` or `python -m locaforge`.
 
-```powershell
-locaforge
-```
+## Model settings inheritance
+
+`ApplicationSettings.model_settings` is the user-scoped global profile. It contains the
+translation model, optional reviewer model, reasoning modes, timeout, batch size, and system
+prompts. It is stored in Qt application settings and supplied to `ProjectWorkspace` at startup.
+
+Every project also stores `model_settings` and `model_settings_override_enabled`:
+
+- with the override disabled, `resolve_model_settings()` returns the current global profile;
+- enabling the override first copies the current effective profile into the project;
+- with the override enabled, project values are used and later global edits do not affect it;
+- editing model settings for an open project enables its override;
+- disabling the override resumes live inheritance without deleting the stored project snapshot;
+- legacy projects that already stored model settings are migrated with the override enabled,
+  while newly created projects inherit globals by default.
+
+The Ollama server URL is application-scoped. Project model settings are persisted inside the
+`.lfproj` SQLite database. This split keeps projects portable while allowing each installation
+to choose its local Ollama endpoint.
+
+## Documentation convention
+
+English is canonical on GitHub. For every Markdown document except `LICENSE`, keep an English
+file and a `.ru.md` peer. Both begin with an `English | Русский` switch, and links should stay
+within the reader's language whenever a translated target exists. Run `python scripts/check_docs.py`
+before committing; CI enforces pairs, switches, and valid local links.
 
 ## Windows portable build
-
-Install the build dependency and create a self-contained Windows x64 bundle:
 
 ```powershell
 python -m pip install -e ".[build]"
 .\scripts\build_windows.ps1
 ```
 
-The script reads the version from `pyproject.toml` and creates
-`dist/LocaForge/LocaForge.exe` plus
-`dist/LocaForge-<version>-windows-x64.zip`. End users do not need Python installed.
-Ollama remains a separate installation for local AI translation.
+The script creates `dist/LocaForge/LocaForge.exe`, runs `--smoke-test`, and produces the
+versioned ZIP archive.
 
-Smoke-test the packaged executable without leaving the GUI open:
+## Continuous integration and releases
 
-```powershell
-$process = Start-Process -FilePath ".\dist\LocaForge\LocaForge.exe" `
-    -ArgumentList "--smoke-test" -WindowStyle Hidden -Wait -PassThru
-if ($process.ExitCode -ne 0) { throw "Smoke test failed" }
-```
+CI runs Ruff, mypy, and pytest on Python 3.12 and 3.13; checks documentation; builds wheel and
+sdist; and builds and smoke-tests the Windows archive. A tag matching `v<project.version>`
+publishes a GitHub Release with packages, the portable archive, and SHA-256 checksums.
 
-## Continuous integration
+## Change checklist
 
-GitHub Actions runs the test suite, Ruff and mypy on Python 3.12 and 3.13. Separate
-jobs build the Python distributions and the Windows portable archive. The Windows
-job starts the packaged executable in smoke-test mode on every push and pull request.
-
-## Release process
-
-1. Update `pyproject.toml`, `README.md`, and `CHANGELOG.md` for the release.
-2. Merge the release changes into `main` and ensure CI is green.
-3. Create and push an annotated tag matching the package version, for example
-   `v0.3.0`.
-4. CI verifies the tag/version match, downloads the build artifacts, creates
-   `SHA256SUMS.txt`, and publishes the GitHub Release.
-
-The release contains the wheel, source distribution, Windows portable ZIP, and
-checksums. A tag that does not match the version in `pyproject.toml` fails before
-publishing.
+- keep domain and application independent of frameworks;
+- add tests at the lowest useful layer;
+- update both language versions of affected documentation and the changelogs;
+- preserve import/export round-trip contracts and migration compatibility.

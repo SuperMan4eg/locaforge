@@ -20,7 +20,7 @@ class OpenProjectFile:
         session = self._project_container.open(path)
         repository = self._repository_factory.create(session.database_path)
         project = repository.get(session.project_id)
-        if project.documents[0].source_format == "legacy":
+        if project.documents and project.documents[0].source_format == "legacy":
             source_file = session.metadata.get("source_file", project.name)
             source_format = session.metadata.get("source_format", "legacy")
             project.configure_single_document(

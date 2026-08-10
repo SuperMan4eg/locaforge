@@ -32,3 +32,14 @@ def test_model_settings_support_separate_reviewer_model() -> None:
 
     assert settings.effective_review_model == "reviewer"
     assert ModelSettings.from_mapping(settings.to_dict()) == settings
+
+
+def test_model_settings_store_separate_reasoning_modes() -> None:
+    settings = ModelSettings(
+        translation_reasoning="low",
+        review_reasoning="high",
+    )
+
+    assert ModelSettings.from_mapping(settings.to_dict()) == settings
+    with pytest.raises(ValueError, match="translation reasoning"):
+        ModelSettings(translation_reasoning="maximum")

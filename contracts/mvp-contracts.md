@@ -1,95 +1,63 @@
-# Контракты MVP
+[English](mvp-contracts.md) | [Русский](mvp-contracts.ru.md)
 
-Этот документ фиксирует поведение портов до реализации. Реализации могут
-отличаться, но не должны менять эти семантики.
+# MVP contracts
 
-## Сущности
+## Domain entities
 
-### TranslationEntry
+### `TranslationEntry`
 
-| Поле | Тип | Правило |
-| --- | --- | --- |
-| `id` | UUID/str | Стабильно внутри проекта. |
-| `key_path` | tuple[str \| int, ...] | Путь к строке в исходном JSON. |
-| `source` | str | Исходный текст; после импорта неизменяем. |
-| `translation` | str \| None | `None` означает отсутствие перевода. |
-| `status` | enum | `untranslated`, `translated`, `needs_review`, `approved`, `error`. |
-| `locked` | bool | Заблокированную запись не меняют ни UI, ни batch-перевод. |
-| `context` | str \| None | Контекст из импорта или пользовательский. |
-| `max_length` | int \| None | Ограничение в символах при наличии. |
-| `placeholders` | sequence[str] | Выделены до отправки модели. |
+An entry has a stable ID, source path/text, optional translation, workflow status, lock state,
+candidate translations, and validation issues. Editing a translation reopens the entry when
+required and records a reversible operation. Locked entries cannot be changed by batch AI flows.
 
-Изменение `translation` вручную переводит запись в `needs_review`, кроме
-явного действия approve. Пустая строка не равна отсутствующему переводу.
+### `Project`
 
-### Project
+A project has an ID, name, language pair, documents, entries, profile, model-settings snapshot,
+override flag, and dirty state. It owns consistency rules but knows nothing about files, SQLite,
+Qt, or HTTP. A project may contain multiple documents with safe unique relative paths.
 
-`Project` содержит идентификатор, имя, source/target language, список файлов,
-записей, настройки модели, схему импортированного документа и флаг `dirty`.
-Ни один use case не изменяет исходный JSON-файл пользователя.
+## Application ports
 
-## Порты application
+### `ProjectRepository`
 
-### ProjectRepository
+Loads and saves projects and their entries, validation issues, revisions, history operations,
+glossary, and translation memory. Multi-entity mutations required by one user action are atomic.
 
-```text
-create(project) -> None
-get(project_id) -> Project
-save(project) -> None
-list_entries(project_id, filter) -> Page[TranslationEntry]
-get_entry(project_id, entry_id) -> TranslationEntry
-update_entry(project_id, entry) -> None
-```
+### `ProjectContainer`
 
-`save` и `update_entry` выполняются транзакционно. Не найденный объект —
-`ProjectNotFound` или `EntryNotFound`, а не `None`.
+Packs and opens portable `.lfproj` files. Writes use a temporary destination and replacement;
+opening supports schema migration and recovery diagnostics. The container never overwrites an
+unrelated source localization file.
 
-### ProjectContainer
+### Importers and exporters
 
-```text
-open(path) -> OpenProject
-save(open_project, destination) -> None
-```
+Importers convert supported source formats into normalized documents and round-trip metadata.
+Exporters reconstruct the same semantic format at a caller-selected destination. Format-specific
+mapping is explicit and reusable where supported. See the [JSON contract](json-round-trip.md).
 
-`open` распаковывает `.lfproj` в рабочую директорию. `save` создаёт валидный
-контейнер атомарно и не портит прежний файл при ошибке.
+### `LLMClient`
 
-### JsonImporter / JsonExporter
+Lists and pulls local models and performs translation, review, and project-profile generation.
+Requests receive explicit settings and bounded context. Infrastructure errors are translated into
+application-facing failures; cancellation preserves the completed part as one reversible operation.
 
-```text
-import_file(path, source_language, target_language) -> ImportedProject
-export_file(project, destination) -> None
-```
+### Translation and review services
 
-Импортер создаёт записи только для JSON string values. Экспортер изменяет только
-те строковые leaf values, для которых существует непустой `translation`; все
-остальные значения сохраняет семантически идентичными.
+Services protect placeholders, apply glossary/context, validate structured model output, and
+return DTOs rather than mutating UI state. The effective model profile follows the inheritance
+rules in the [developer guide](../docs/development.md#model-settings-inheritance).
 
-### LLMClient
+## Behavioral guarantees
 
-```text
-translate(request: TranslationRequest) -> TranslationResponse
-health_check() -> ModelHealth
-```
+- original input files remain unchanged;
+- export is transactional and preserves format semantics;
+- project paths are relative, normalized, unique case-insensitively, and cannot escape the project;
+- persisted operations support Undo/Redo with conflict checks against newer state;
+- failures contain actionable context and do not leave partially committed project state;
+- presentation code invokes use cases and does not implement domain rules.
 
-`TranslationRequest` содержит выбранную модель, языки, набор записей, prompt и
-тайм-аут. Ответ соотносит результат с `entry_id`; порядок не считается контрактом.
-Backend не должен сам сохранять результаты и не должен видеть SQLite.
+## Error categories
 
-### TranslationService
-
-```text
-translate_batch(project_id, entry_ids, options) -> BatchResult
-```
-
-Сервис пропускает `locked` и `approved` записи по умолчанию, защищает placeholders,
-валидирует ответ и сохраняет только валидные результаты. Некорректные записи
-возвращаются в `BatchResult.errors`, не теряя уже валидных результатов пакета.
-
-## Ошибки
-
-Ошибки должны быть различимы программно: `InvalidJson`, `UnsupportedJsonShape`,
-`ProjectNotFound`, `EntryNotFound`, `ProjectBusy`, `ModelUnavailable`,
-`ModelTimeout`, `InvalidModelResponse`, `PlaceholderMismatch`, `ExportFailed`.
-В UI отображается человекочитаемое сообщение; полный технический контекст идёт
-только в журнал.
+Expected errors include invalid input/mapping, project not found or corrupt, unsafe/conflicting
+path, unavailable model/backend, invalid model response, validation failure, cancellation, and
+destination I/O failure. UI adapters may localize these errors but must not discard their cause.

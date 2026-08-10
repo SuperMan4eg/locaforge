@@ -13,12 +13,21 @@ from PySide6.QtCore import (
 )
 
 from locaforge.domain.entry import TranslationEntry
+from locaforge.presentation.localization import tr_source
 
 _INVALID_INDEX = QModelIndex()
 
 
 class TranslationTableModel(QAbstractTableModel):
     _HEADERS = ("Key", "Source", "Translation", "Status")
+    status_role = int(Qt.ItemDataRole.UserRole) + 1
+    _STATUS_LABELS = {
+        "untranslated": "Untranslated",
+        "translated": "Translated",
+        "needs_review": "Needs review",
+        "approved": "Approved",
+        "error": "Error",
+    }
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -58,14 +67,18 @@ class TranslationTableModel(QAbstractTableModel):
         index: QModelIndex | QPersistentModelIndex,
         role: int = Qt.ItemDataRole.DisplayRole,
     ) -> object | None:
-        if not index.isValid() or role != Qt.ItemDataRole.DisplayRole:
+        if not index.isValid():
             return None
         entry = self._entries[index.row()]
+        if role == self.status_role:
+            return entry.status.value if index.column() == 3 else None
+        if role != Qt.ItemDataRole.DisplayRole:
+            return None
         values = (
             entry.key or "/".join(str(part) for part in entry.key_path),
             entry.source,
             entry.translation or "",
-            entry.status.value,
+            tr_source(self._STATUS_LABELS.get(entry.status.value, entry.status.value)),
         )
         return values[index.column()]
 
@@ -78,5 +91,5 @@ class TranslationTableModel(QAbstractTableModel):
         if role != Qt.ItemDataRole.DisplayRole:
             return None
         if orientation == Qt.Orientation.Horizontal:
-            return self._HEADERS[section]
+            return tr_source(self._HEADERS[section])
         return section + 1

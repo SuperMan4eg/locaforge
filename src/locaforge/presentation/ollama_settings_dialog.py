@@ -19,7 +19,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from locaforge.domain.settings import ModelSettings
+from locaforge.domain.settings import REASONING_MODES, ModelSettings
+
+_REASONING_LABELS = {
+    "off": "Off",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+}
 
 
 class OllamaSettingsDialog(QDialog):
@@ -54,6 +61,11 @@ class OllamaSettingsDialog(QDialog):
             else self._model.currentText()
         )
 
+        self._translation_reasoning = self._reasoning_combo(
+            settings.translation_reasoning
+        )
+        self._review_reasoning = self._reasoning_combo(settings.review_reasoning)
+
         self._timeout = QDoubleSpinBox(self)
         self._timeout.setRange(1.0, 3600.0)
         self._timeout.setDecimals(1)
@@ -83,6 +95,8 @@ class OllamaSettingsDialog(QDialog):
         general_form.addRow("Connection", status)
         general_form.addRow("Model", self._model)
         general_form.addRow("Reviewer model", self._review_model)
+        general_form.addRow("Translation reasoning", self._translation_reasoning)
+        general_form.addRow("Reviewer reasoning", self._review_reasoning)
         general_form.addRow("Timeout", self._timeout)
         general_form.addRow("Batch size", self._batch_size)
 
@@ -118,7 +132,16 @@ class OllamaSettingsDialog(QDialog):
             system_prompt=self._system_prompt.toPlainText(),
             review_prompt=self._review_prompt.toPlainText(),
             review_model=(review_model if review_model != translation_model else ""),
+            translation_reasoning=self._translation_reasoning.currentData(),
+            review_reasoning=self._review_reasoning.currentData(),
         )
 
     def save_as_default(self) -> bool:
         return self._save_as_default.isChecked()
+
+    def _reasoning_combo(self, current: str) -> QComboBox:
+        combo = QComboBox(self)
+        for mode in REASONING_MODES:
+            combo.addItem(_REASONING_LABELS[mode], mode)
+        combo.setCurrentIndex(combo.findData(current))
+        return combo

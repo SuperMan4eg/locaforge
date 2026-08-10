@@ -82,6 +82,16 @@ def test_opening_legacy_database_adds_document_support(tmp_path: Path) -> None:
 
     assert restored.documents[0].source_format == "legacy"
     assert restored.entries[0].document_id == restored.documents[0].id
+    assert restored.model_settings_override_enabled is True
+
+
+def test_new_project_defaults_to_global_model_settings_mode(tmp_path: Path) -> None:
+    repository = SQLiteProjectRepository(tmp_path / "project.db")
+    project = make_project()
+
+    repository.create(project)
+
+    assert repository.get(project.id).model_settings_override_enabled is False
 
 
 def test_update_entry_persists_the_change_and_marks_project_dirty(tmp_path: Path) -> None:

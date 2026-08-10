@@ -51,7 +51,7 @@ class ReviewController(QObject):
     def start(self, entry_ids: tuple[str, ...]) -> bool:
         if not entry_ids or self.is_running:
             return False
-        review_model = self._workspace.project.model_settings.effective_review_model
+        review_model = self._workspace.resolve_model_settings().effective_review_model
         if not self._ensure_model(review_model, True):
             return False
         worker = ReviewWorker(

@@ -127,5 +127,5 @@ def test_proxy_sorts_statuses_by_translation_workflow() -> None:
     proxy.sort(3, Qt.SortOrder.AscendingOrder)
 
     assert application is not None
-    assert proxy.data(proxy.index(0, 3)) == "untranslated"
-    assert proxy.data(proxy.index(1, 3)) == "translated"
+    assert proxy.data(proxy.index(0, 3)) == "Untranslated"
+    assert proxy.data(proxy.index(1, 3)) == "Translated"

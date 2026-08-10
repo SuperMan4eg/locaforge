@@ -16,8 +16,9 @@ from locaforge.application.dto.validation import (
 from locaforge.application.errors import EntryNotFoundError, ProjectNotFoundError
 from locaforge.domain.document import ProjectDocument
 from locaforge.domain.entry import EntryStatus, JsonPath, TranslationEntry
-from locaforge.domain.history import EntryRevision
+from locaforge.domain.history import EntryRevision, ProjectOperation
 from locaforge.domain.project import Project
+from locaforge.domain.project_profile import ProjectProfile
 from locaforge.domain.settings import ModelSettings
 
 
@@ -39,7 +40,7 @@ class SQLiteProjectRepository:
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT id, name, source_language, target_language, source_document, "
-                "model_settings, dirty "
+                "model_settings, model_settings_override_enabled, project_profile, dirty "
                 "FROM projects WHERE id = ?",
                 (project_id,),
             ).fetchone()
@@ -53,7 +54,8 @@ class SQLiteProjectRepository:
                 (project_id,),
             ).fetchall()
             document_rows = connection.execute(
-                "SELECT id, name, source_path, source_format, source_document "
+                "SELECT id, name, source_path, source_format, source_document, "
+                "source_location, import_settings "
                 "FROM documents WHERE project_id = ? ORDER BY row_order",
                 (project_id,),
             ).fetchall()
@@ -66,8 +68,10 @@ class SQLiteProjectRepository:
             entries=[self._entry_from_row(entry_row) for entry_row in entry_rows],
             source_document=json.loads(row["source_document"]),
             model_settings=ModelSettings.from_mapping(json.loads(row["model_settings"])),
+            model_settings_override_enabled=bool(row["model_settings_override_enabled"]),
             dirty=bool(row["dirty"]),
             documents=[self._document_from_row(document_row) for document_row in document_rows],
+            profile=ProjectProfile.from_mapping(json.loads(row["project_profile"])),
         )
 
     def save(self, project: Project) -> None:
@@ -191,6 +195,117 @@ class SQLiteProjectRepository:
                 raise EntryNotFoundError("One or more entries were not found")
             connection.execute("UPDATE projects SET dirty = 1 WHERE id = ?", (project_id,))
 
+    def remove_documents(self, project_id: str, document_ids: Sequence[str]) -> None:
+        if not document_ids:
+            return
+        with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT 1 FROM projects WHERE id = ?", (project_id,)
+            ).fetchone()
+            if existing is None:
+                raise ProjectNotFoundError(f"Project {project_id!r} was not found")
+            document_rows: list[sqlite3.Row] = []
+            for offset in range(0, len(document_ids), 900):
+                selected = tuple(document_ids[offset : offset + 900])
+                placeholders = ", ".join("?" for _ in selected)
+                document_rows.extend(
+                    connection.execute(
+                        "SELECT id FROM documents WHERE project_id = ? "
+                        f"AND id IN ({placeholders})",
+                        (project_id, *selected),
+                    ).fetchall()
+                )
+            if len(document_rows) != len(set(document_ids)):
+                raise ValueError("One or more project documents were not found")
+            entry_rows: list[sqlite3.Row] = []
+            for offset in range(0, len(document_ids), 900):
+                selected = tuple(document_ids[offset : offset + 900])
+                placeholders = ", ".join("?" for _ in selected)
+                entry_rows.extend(
+                    connection.execute(
+                        "SELECT id FROM entries WHERE project_id = ? "
+                        f"AND document_id IN ({placeholders})",
+                        (project_id, *selected),
+                    ).fetchall()
+                )
+            entry_ids = tuple(row["id"] for row in entry_rows)
+            for offset in range(0, len(entry_ids), 900):
+                selected = entry_ids[offset : offset + 900]
+                placeholders = ", ".join("?" for _ in selected)
+                connection.execute(
+                    "DELETE FROM validation WHERE project_id = ? "
+                    f"AND entry_id IN ({placeholders})",
+                    (project_id, *selected),
+                )
+                connection.execute(
+                    "DELETE FROM entry_history WHERE project_id = ? "
+                    f"AND entry_id IN ({placeholders})",
+                    (project_id, *selected),
+                )
+                connection.execute(
+                    "DELETE FROM translation_operation_entries "
+                    f"WHERE entry_id IN ({placeholders}) AND operation_id IN "
+                    "(SELECT id FROM translation_operations WHERE project_id = ?)",
+                    (*selected, project_id),
+                )
+            connection.execute(
+                "DELETE FROM translation_operations WHERE project_id = ? AND NOT EXISTS "
+                "(SELECT 1 FROM translation_operation_entries snapshots "
+                "WHERE snapshots.operation_id = translation_operations.id)",
+                (project_id,),
+            )
+            for offset in range(0, len(document_ids), 900):
+                selected = tuple(document_ids[offset : offset + 900])
+                placeholders = ", ".join("?" for _ in selected)
+                connection.execute(
+                    "DELETE FROM entries WHERE project_id = ? "
+                    f"AND document_id IN ({placeholders})",
+                    (project_id, *selected),
+                )
+                connection.execute(
+                    "DELETE FROM documents WHERE project_id = ? "
+                    f"AND id IN ({placeholders})",
+                    (project_id, *selected),
+                )
+            connection.execute("UPDATE projects SET dirty = 1 WHERE id = ?", (project_id,))
+
+    def remove_entry_artifacts(
+        self,
+        project_id: str,
+        removed_entry_ids: Sequence[str],
+        reset_validation_entry_ids: Sequence[str] = (),
+    ) -> None:
+        with self._connect() as connection:
+            for entry_ids in (removed_entry_ids, reset_validation_entry_ids):
+                for offset in range(0, len(entry_ids), 900):
+                    selected = tuple(entry_ids[offset : offset + 900])
+                    placeholders = ", ".join("?" for _ in selected)
+                    connection.execute(
+                        "DELETE FROM validation WHERE project_id = ? "
+                        f"AND entry_id IN ({placeholders})",
+                        (project_id, *selected),
+                    )
+            for offset in range(0, len(removed_entry_ids), 900):
+                selected = tuple(removed_entry_ids[offset : offset + 900])
+                placeholders = ", ".join("?" for _ in selected)
+                connection.execute(
+                    "DELETE FROM entry_history WHERE project_id = ? "
+                    f"AND entry_id IN ({placeholders})",
+                    (project_id, *selected),
+                )
+                connection.execute(
+                    "DELETE FROM translation_operation_entries "
+                    f"WHERE entry_id IN ({placeholders}) AND operation_id IN "
+                    "(SELECT id FROM translation_operations WHERE project_id = ?)",
+                    (*selected, project_id),
+                )
+            connection.execute(
+                "DELETE FROM translation_operations WHERE project_id = ? AND NOT EXISTS "
+                "(SELECT 1 FROM translation_operation_entries snapshots "
+                "WHERE snapshots.operation_id = translation_operations.id)",
+                (project_id,),
+            )
+
     def list_entry_revisions(
         self, project_id: str, entry_id: str, limit: int = 50
     ) -> tuple[EntryRevision, ...]:
@@ -285,7 +400,12 @@ class SQLiteProjectRepository:
                     source_language TEXT NOT NULL,
                     target_language TEXT NOT NULL,
                     source_document TEXT NOT NULL,
+                    source_location TEXT,
+                    import_settings TEXT NOT NULL DEFAULT '{}',
                     model_settings TEXT NOT NULL DEFAULT '{}',
+                    model_settings_override_enabled INTEGER NOT NULL DEFAULT 0
+                        CHECK (model_settings_override_enabled IN (0, 1)),
+                    project_profile TEXT NOT NULL DEFAULT '{}',
                     dirty INTEGER NOT NULL CHECK (dirty IN (0, 1))
                 );
 
@@ -343,6 +463,7 @@ class SQLiteProjectRepository:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
                     recorded_at TEXT NOT NULL,
+                    label TEXT NOT NULL DEFAULT 'Edit translation',
                     undone INTEGER NOT NULL DEFAULT 0 CHECK (undone IN (0, 1))
                 );
 
@@ -352,13 +473,16 @@ class SQLiteProjectRepository:
                     entry_id TEXT NOT NULL,
                     translation TEXT,
                     status TEXT NOT NULL,
+                    locked INTEGER NOT NULL DEFAULT 0,
                     model_translation TEXT,
                     reviewer_translation TEXT,
                     resulting_translation TEXT,
                     resulting_status TEXT NOT NULL,
+                    resulting_locked INTEGER NOT NULL DEFAULT 0,
                     resulting_model_translation TEXT,
                     resulting_reviewer_translation TEXT,
                     validation_issues TEXT NOT NULL,
+                    resulting_validation_issues TEXT NOT NULL DEFAULT '[]',
                     PRIMARY KEY(operation_id, entry_id)
                 );
 
@@ -374,6 +498,16 @@ class SQLiteProjectRepository:
                 connection.execute(
                     "ALTER TABLE projects ADD COLUMN model_settings TEXT NOT NULL DEFAULT '{}'"
                 )
+            # Existing projects historically always used their stored settings.
+            if "model_settings_override_enabled" not in columns:
+                connection.execute(
+                    "ALTER TABLE projects ADD COLUMN model_settings_override_enabled "
+                    "INTEGER NOT NULL DEFAULT 1 CHECK (model_settings_override_enabled IN (0, 1))"
+                )
+            if "project_profile" not in columns:
+                connection.execute(
+                    "ALTER TABLE projects ADD COLUMN project_profile TEXT NOT NULL DEFAULT '{}'"
+                )
             entry_columns = {
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(entries)").fetchall()
@@ -386,6 +520,48 @@ class SQLiteProjectRepository:
                 connection.execute("ALTER TABLE entries ADD COLUMN model_translation TEXT")
             if "reviewer_translation" not in entry_columns:
                 connection.execute("ALTER TABLE entries ADD COLUMN reviewer_translation TEXT")
+            operation_columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(translation_operations)"
+                ).fetchall()
+            }
+            if "label" not in operation_columns:
+                connection.execute(
+                    "ALTER TABLE translation_operations ADD COLUMN "
+                    "label TEXT NOT NULL DEFAULT 'Edit translation'"
+                )
+            operation_entry_columns = {
+                row["name"]
+                for row in connection.execute(
+                    "PRAGMA table_info(translation_operation_entries)"
+                ).fetchall()
+            }
+            if "resulting_validation_issues" not in operation_entry_columns:
+                connection.execute(
+                    "ALTER TABLE translation_operation_entries ADD COLUMN "
+                    "resulting_validation_issues TEXT NOT NULL DEFAULT '[]'"
+                )
+            if "locked" not in operation_entry_columns:
+                connection.execute(
+                    "ALTER TABLE translation_operation_entries ADD COLUMN "
+                    "locked INTEGER NOT NULL DEFAULT 0"
+                )
+            if "resulting_locked" not in operation_entry_columns:
+                connection.execute(
+                    "ALTER TABLE translation_operation_entries ADD COLUMN "
+                    "resulting_locked INTEGER NOT NULL DEFAULT 0"
+                )
+            document_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(documents)").fetchall()
+            }
+            if "source_location" not in document_columns:
+                connection.execute("ALTER TABLE documents ADD COLUMN source_location TEXT")
+            if "import_settings" not in document_columns:
+                connection.execute(
+                    "ALTER TABLE documents ADD COLUMN import_settings TEXT NOT NULL DEFAULT '{}'"
+                )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self._database_path)
@@ -398,33 +574,45 @@ class SQLiteProjectRepository:
         project_id: str,
         previous_entries: Sequence[TranslationEntry],
         previous_issues: Mapping[str, Sequence[ValidationIssue]],
+        label: str,
     ) -> None:
         if not previous_entries:
             return
+        current_issues: dict[str, list[EntryValidationIssue]] = {}
+        for issue in self.list_validation_issues(project_id):
+            current_issues.setdefault(issue.entry_id, []).append(issue)
         with self._connect() as connection:
+            connection.execute(
+                "DELETE FROM translation_operations WHERE project_id = ? AND undone = 1",
+                (project_id,),
+            )
             cursor = connection.execute(
-                "INSERT INTO translation_operations (project_id, recorded_at) VALUES (?, ?)",
-                (project_id, datetime.now(UTC).isoformat()),
+                "INSERT INTO translation_operations (project_id, recorded_at, label) "
+                "VALUES (?, ?, ?)",
+                (project_id, datetime.now(UTC).isoformat(), label),
             )
             if cursor.lastrowid is None:
                 raise RuntimeError("Cannot allocate translation operation id")
             operation_id = int(cursor.lastrowid)
             connection.executemany(
                 "INSERT INTO translation_operation_entries "
-                "(operation_id, entry_id, translation, status, model_translation, "
+                "(operation_id, entry_id, translation, status, locked, model_translation, "
                 "reviewer_translation, resulting_translation, resulting_status, "
-                "resulting_model_translation, resulting_reviewer_translation, "
-                "validation_issues) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "resulting_locked, resulting_model_translation, resulting_reviewer_translation, "
+                "validation_issues, resulting_validation_issues) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [
                     (
                         operation_id,
                         entry.id,
                         entry.translation,
                         entry.status.value,
+                        int(entry.locked),
                         entry.model_translation,
                         entry.reviewer_translation,
                         current.translation,
                         current.status.value,
+                        int(current.locked),
                         current.model_translation,
                         current.reviewer_translation,
                         json.dumps(
@@ -434,11 +622,61 @@ class SQLiteProjectRepository:
                             ],
                             ensure_ascii=False,
                         ),
+                        json.dumps(
+                            [
+                                {"code": issue.code.value, "message": issue.message}
+                                for issue in current_issues.get(entry.id, ())
+                            ],
+                            ensure_ascii=False,
+                        ),
                     )
                     for entry in previous_entries
                     for current in (self.get_entry(project_id, entry.id),)
                 ],
             )
+
+    def next_undo_operation_label(self, project_id: str) -> str | None:
+        return self._next_operation_label(project_id, undone=False)
+
+    def next_redo_operation_label(self, project_id: str) -> str | None:
+        return self._next_operation_label(project_id, undone=True)
+
+    def list_translation_operations(
+        self, project_id: str, limit: int = 50
+    ) -> tuple[ProjectOperation, ...]:
+        if limit < 1:
+            return ()
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT operation.id, operation.label, operation.recorded_at, "
+                "operation.undone, COUNT(snapshot.entry_id) AS entry_count "
+                "FROM translation_operations operation "
+                "JOIN translation_operation_entries snapshot "
+                "ON snapshot.operation_id = operation.id "
+                "WHERE operation.project_id = ? GROUP BY operation.id "
+                "ORDER BY operation.id DESC LIMIT ?",
+                (project_id, limit),
+            ).fetchall()
+        return tuple(
+            ProjectOperation(
+                operation_id=int(row["id"]),
+                label=str(row["label"]),
+                recorded_at=datetime.fromisoformat(str(row["recorded_at"])),
+                undone=bool(row["undone"]),
+                entry_count=int(row["entry_count"]),
+            )
+            for row in rows
+        )
+
+    def _next_operation_label(self, project_id: str, *, undone: bool) -> str | None:
+        order = "ASC" if undone else "DESC"
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT label FROM translation_operations "
+                f"WHERE project_id = ? AND undone = ? ORDER BY id {order} LIMIT 1",
+                (project_id, int(undone)),
+            ).fetchone()
+        return None if row is None else str(row["label"])
 
     def has_undoable_translation_operation(self, project_id: str) -> bool:
         with self._connect() as connection:
@@ -456,12 +694,18 @@ class SQLiteProjectRepository:
                 "WHERE snapshot.operation_id = ? AND (entry.id IS NULL "
                 "OR entry.translation IS NOT snapshot.resulting_translation "
                 "OR entry.status IS NOT snapshot.resulting_status "
+                "OR entry.locked IS NOT snapshot.resulting_locked "
                 "OR entry.model_translation IS NOT snapshot.resulting_model_translation "
                 "OR entry.reviewer_translation IS NOT "
                 "snapshot.resulting_reviewer_translation) LIMIT 1",
                 (project_id, operation["id"]),
             ).fetchone()
-            return mismatch is None
+            return mismatch is None and self._operation_validation_matches(
+                connection,
+                project_id,
+                int(operation["id"]),
+                "resulting_validation_issues",
+            )
 
     def undo_last_translation_operation(
         self, project_id: str
@@ -476,10 +720,19 @@ class SQLiteProjectRepository:
             if operation is None:
                 return ()
             operation_id = int(operation["id"])
+            if not self._operation_validation_matches(
+                connection,
+                project_id,
+                operation_id,
+                "resulting_validation_issues",
+            ):
+                raise ValueError(
+                    "Cannot undo operation because validation results changed later"
+                )
             snapshots = connection.execute(
-                "SELECT entry_id, translation, status, model_translation, "
+                "SELECT entry_id, translation, status, locked, model_translation, "
                 "reviewer_translation, resulting_translation, resulting_status, "
-                "resulting_model_translation, resulting_reviewer_translation, "
+                "resulting_locked, resulting_model_translation, resulting_reviewer_translation, "
                 "validation_issues "
                 "FROM translation_operation_entries WHERE operation_id = ?",
                 (operation_id,),
@@ -494,13 +747,14 @@ class SQLiteProjectRepository:
                         f"Entry {snapshot['entry_id']!r} from translation undo was not found"
                     )
                 current_state = connection.execute(
-                    "SELECT translation, status, model_translation, reviewer_translation "
+                    "SELECT translation, status, locked, model_translation, reviewer_translation "
                     "FROM entries WHERE project_id = ? AND id = ?",
                     (project_id, snapshot["entry_id"]),
                 ).fetchone()
                 expected_state = (
                     snapshot["resulting_translation"],
                     snapshot["resulting_status"],
+                    snapshot["resulting_locked"],
                     snapshot["resulting_model_translation"],
                     snapshot["resulting_reviewer_translation"],
                 )
@@ -519,11 +773,13 @@ class SQLiteProjectRepository:
                     ),
                 )
                 connection.execute(
-                    "UPDATE entries SET translation = ?, status = ?, model_translation = ?, "
+                    "UPDATE entries SET translation = ?, status = ?, locked = ?, "
+                    "model_translation = ?, "
                     "reviewer_translation = ? WHERE project_id = ? AND id = ?",
                     (
                         snapshot["translation"],
                         snapshot["status"],
+                        snapshot["locked"],
                         snapshot["model_translation"],
                         snapshot["reviewer_translation"],
                         project_id,
@@ -556,20 +812,158 @@ class SQLiteProjectRepository:
             connection.execute("UPDATE projects SET dirty = 1 WHERE id = ?", (project_id,))
         return tuple(self.get_entry(project_id, entry_id) for entry_id in restored_entry_ids)
 
+    def has_redoable_translation_operation(self, project_id: str) -> bool:
+        with self._connect() as connection:
+            operation = connection.execute(
+                "SELECT id FROM translation_operations "
+                "WHERE project_id = ? AND undone = 1 ORDER BY id ASC LIMIT 1",
+                (project_id,),
+            ).fetchone()
+            if operation is None:
+                return False
+            mismatch = connection.execute(
+                "SELECT 1 FROM translation_operation_entries snapshot "
+                "LEFT JOIN entries entry ON entry.project_id = ? AND entry.id = snapshot.entry_id "
+                "WHERE snapshot.operation_id = ? AND (entry.id IS NULL "
+                "OR entry.translation IS NOT snapshot.translation "
+                "OR entry.status IS NOT snapshot.status "
+                "OR entry.locked IS NOT snapshot.locked "
+                "OR entry.model_translation IS NOT snapshot.model_translation "
+                "OR entry.reviewer_translation IS NOT snapshot.reviewer_translation) LIMIT 1",
+                (project_id, operation["id"]),
+            ).fetchone()
+            return mismatch is None and self._operation_validation_matches(
+                connection,
+                project_id,
+                int(operation["id"]),
+                "validation_issues",
+            )
+
+    def redo_last_translation_operation(
+        self, project_id: str
+    ) -> tuple[TranslationEntry, ...]:
+        restored_entry_ids: list[str] = []
+        with self._connect() as connection:
+            operation = connection.execute(
+                "SELECT id FROM translation_operations "
+                "WHERE project_id = ? AND undone = 1 ORDER BY id ASC LIMIT 1",
+                (project_id,),
+            ).fetchone()
+            if operation is None:
+                return ()
+            operation_id = int(operation["id"])
+            if not self._operation_validation_matches(
+                connection,
+                project_id,
+                operation_id,
+                "validation_issues",
+            ):
+                raise ValueError(
+                    "Cannot redo operation because validation results changed later"
+                )
+            snapshots = connection.execute(
+                "SELECT entry_id, translation, status, locked, model_translation, "
+                "reviewer_translation, resulting_translation, resulting_status, "
+                "resulting_locked, resulting_model_translation, resulting_reviewer_translation, "
+                "resulting_validation_issues FROM translation_operation_entries "
+                "WHERE operation_id = ?",
+                (operation_id,),
+            ).fetchall()
+            for snapshot in snapshots:
+                current = connection.execute(
+                    "SELECT translation, status, locked, model_translation, reviewer_translation "
+                    "FROM entries WHERE project_id = ? AND id = ?",
+                    (project_id, snapshot["entry_id"]),
+                ).fetchone()
+                expected = (
+                    snapshot["translation"],
+                    snapshot["status"],
+                    snapshot["locked"],
+                    snapshot["model_translation"],
+                    snapshot["reviewer_translation"],
+                )
+                if current is None or tuple(current) != expected:
+                    raise ValueError(
+                        "Cannot redo translation because one or more entries were edited later"
+                    )
+                connection.execute(
+                    "UPDATE entries SET translation = ?, status = ?, locked = ?, "
+                    "model_translation = ?, "
+                    "reviewer_translation = ? WHERE project_id = ? AND id = ?",
+                    (
+                        snapshot["resulting_translation"],
+                        snapshot["resulting_status"],
+                        snapshot["resulting_locked"],
+                        snapshot["resulting_model_translation"],
+                        snapshot["resulting_reviewer_translation"],
+                        project_id,
+                        snapshot["entry_id"],
+                    ),
+                )
+                connection.execute(
+                    "DELETE FROM validation WHERE project_id = ? AND entry_id = ?",
+                    (project_id, snapshot["entry_id"]),
+                )
+                connection.executemany(
+                    "INSERT INTO validation (project_id, entry_id, code, message) "
+                    "VALUES (?, ?, ?, ?)",
+                    [
+                        (project_id, snapshot["entry_id"], issue["code"], issue["message"])
+                        for issue in json.loads(snapshot["resulting_validation_issues"])
+                    ],
+                )
+                restored_entry_ids.append(snapshot["entry_id"])
+            connection.execute(
+                "UPDATE translation_operations SET undone = 0 WHERE id = ?", (operation_id,)
+            )
+            connection.execute("UPDATE projects SET dirty = 1 WHERE id = ?", (project_id,))
+        return tuple(self.get_entry(project_id, entry_id) for entry_id in restored_entry_ids)
+
+    def _operation_validation_matches(
+        self,
+        connection: sqlite3.Connection,
+        project_id: str,
+        operation_id: int,
+        snapshot_column: str,
+    ) -> bool:
+        if snapshot_column not in {"validation_issues", "resulting_validation_issues"}:
+            raise ValueError(f"Unknown validation snapshot column: {snapshot_column}")
+        snapshots = connection.execute(
+            f"SELECT entry_id, {snapshot_column} AS issues "
+            "FROM translation_operation_entries WHERE operation_id = ?",
+            (operation_id,),
+        ).fetchall()
+        for snapshot in snapshots:
+            current = connection.execute(
+                "SELECT code, message FROM validation "
+                "WHERE project_id = ? AND entry_id = ? ORDER BY code, message",
+                (project_id, snapshot["entry_id"]),
+            ).fetchall()
+            current_issues = sorted((row["code"], row["message"]) for row in current)
+            expected_issues = sorted(
+                (issue["code"], issue["message"])
+                for issue in json.loads(snapshot["issues"])
+            )
+            if current_issues != expected_issues:
+                return False
+        return True
+
     def _write_project(self, connection: sqlite3.Connection, project: Project) -> None:
         connection.execute(
             """
             INSERT INTO projects (
                 id, name, source_language, target_language, source_document,
-                model_settings, dirty
+                model_settings, model_settings_override_enabled, project_profile, dirty
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 source_language = excluded.source_language,
                 target_language = excluded.target_language,
                 source_document = excluded.source_document,
                 model_settings = excluded.model_settings,
+                model_settings_override_enabled = excluded.model_settings_override_enabled,
+                project_profile = excluded.project_profile,
                 dirty = excluded.dirty
             """,
             (
@@ -579,6 +973,8 @@ class SQLiteProjectRepository:
                 project.target_language,
                 json.dumps(project.source_document, ensure_ascii=False),
                 json.dumps(project.model_settings.to_dict(), ensure_ascii=False),
+                int(project.model_settings_override_enabled),
+                json.dumps(project.profile.to_dict(), ensure_ascii=False),
                 int(project.dirty),
             ),
         )
@@ -586,8 +982,8 @@ class SQLiteProjectRepository:
         connection.execute("DELETE FROM documents WHERE project_id = ?", (project.id,))
         connection.executemany(
             "INSERT INTO documents "
-            "(id, project_id, row_order, name, source_path, source_format, source_document) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(id, project_id, row_order, name, source_path, source_format, source_document, "
+            "source_location, import_settings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     document.id,
@@ -597,6 +993,8 @@ class SQLiteProjectRepository:
                     document.source_path,
                     document.source_format,
                     json.dumps(document.source_document, ensure_ascii=False),
+                    document.source_location,
+                    json.dumps(document.import_settings, ensure_ascii=False),
                 )
                 for index, document in enumerate(project.documents)
             ],
@@ -677,6 +1075,8 @@ class SQLiteProjectRepository:
             source_path=row["source_path"],
             source_format=row["source_format"],
             source_document=json.loads(row["source_document"]),
+            source_location=row["source_location"],
+            import_settings=json.loads(row["import_settings"]),
         )
 
     @staticmethod

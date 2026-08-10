@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, Signal
 
 from locaforge.application.project_workspace import ProjectWorkspace
 from locaforge.presentation.model_pull_worker import ModelPullWorker
@@ -16,6 +16,9 @@ type ShowError = Callable[[str, str], None]
 
 class ModelPullController(QObject):
     """Owns the background Ollama model download lifecycle."""
+
+    started = Signal(str)
+    completed = Signal(str, bool, str)
 
     def __init__(
         self,
@@ -38,13 +41,17 @@ class ModelPullController(QObject):
     def is_running(self) -> bool:
         return self._worker is not None and self._worker.isRunning()
 
-    def start(self, model: str) -> bool:
+    def start(
+        self,
+        model: str,
+        pull_operation: Callable[[], None] | None = None,
+    ) -> bool:
         normalized_model = model.strip()
         if not normalized_model or self.is_running:
             return False
         worker = ModelPullWorker(
             normalized_model,
-            lambda: self._workspace.pull_model(normalized_model),
+            pull_operation or (lambda: self._workspace.pull_model(normalized_model)),
             self,
         )
         worker.succeeded.connect(self._model_pull_succeeded)
@@ -54,6 +61,7 @@ class ModelPullController(QObject):
         self._set_busy(True, True)
         self._prepare_progress()
         self._show_status(f"Downloading Ollama model {normalized_model}...", 0)
+        self.started.emit(normalized_model)
         worker.start()
         return True
 
@@ -61,8 +69,10 @@ class ModelPullController(QObject):
         self._worker = None
         self._set_busy(False, True)
         self._show_status(f"Ollama model {model} installed", 5000)
+        self.completed.emit(model, True, "")
 
     def _model_pull_failed(self, message: str) -> None:
         self._worker = None
         self._set_busy(False, True)
         self._show_error("Ollama model installation failed", message)
+        self.completed.emit("", False, message)
