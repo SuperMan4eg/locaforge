@@ -55,6 +55,22 @@ def test_saving_existing_container_creates_a_backup(tmp_path: Path) -> None:
     assert destination.with_suffix(".lfproj.bak").read_bytes() == first_archive
 
 
+def test_saving_existing_container_rotates_three_backup_generations(tmp_path: Path) -> None:
+    container, session = create_project_session(tmp_path)
+    destination = tmp_path / "dialog.lfproj"
+    saved_versions: list[bytes] = []
+
+    for version in range(4):
+        session.metadata["version"] = version
+        container.save(session, destination)
+        saved_versions.append(destination.read_bytes())
+
+    assert destination.with_suffix(".lfproj.bak").read_bytes() == saved_versions[2]
+    assert destination.with_suffix(".lfproj.bak.1").read_bytes() == saved_versions[1]
+    assert destination.with_suffix(".lfproj.bak.2").read_bytes() == saved_versions[0]
+    assert not destination.with_suffix(".lfproj.bak.3").exists()
+
+
 def test_saving_snapshot_restores_working_project_without_creating_backup(tmp_path: Path) -> None:
     container, session = create_project_session(tmp_path)
     destination = tmp_path / "dialog.lfproj"
@@ -100,3 +116,29 @@ def test_open_rejects_unsafe_archive_member(tmp_path: Path) -> None:
 
     with pytest.raises(ProjectContainerError, match="unsafe"):
         LfprojContainer(tmp_path / "work").open(unsafe_container)
+
+
+def test_open_rejects_container_with_corrupt_project_database(tmp_path: Path) -> None:
+    broken_container = tmp_path / "broken-database.lfproj"
+    with zipfile.ZipFile(broken_container, "w") as archive:
+        archive.writestr("metadata.json", '{"format_version": 2}')
+        archive.writestr("project.db", b"not a sqlite database")
+
+    with pytest.raises(ProjectContainerError, match="integrity"):
+        LfprojContainer(tmp_path / "work").open(broken_container)
+
+
+def test_save_rejects_corrupt_database_without_replacing_existing_container(
+    tmp_path: Path,
+) -> None:
+    container, session = create_project_session(tmp_path)
+    destination = tmp_path / "dialog.lfproj"
+    container.save(session, destination)
+    saved_container = destination.read_bytes()
+    session.database_path.write_bytes(b"not a sqlite database")
+
+    with pytest.raises(ProjectContainerError, match="integrity"):
+        container.save(session, destination)
+
+    assert destination.read_bytes() == saved_container
+    assert not destination.with_suffix(".lfproj.tmp").exists()

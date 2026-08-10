@@ -52,13 +52,14 @@ python -m pip install -e ".[build]"
 .\scripts\build_windows.ps1
 ```
 
-The script creates `dist/LocaForge/LocaForge.exe`, runs `--smoke-test`, and produces the
-versioned ZIP archive.
+The script creates `dist/LocaForge/LocaForge.exe` and the versioned ZIP archive. The executable
+supports two build checks: `--smoke-test` launches and composes the UI, while `--self-test`
+creates, edits, saves, reopens, and exports an isolated JSON project.
 
 ## Continuous integration and releases
 
 CI runs Ruff, mypy, and pytest on Python 3.12 and 3.13; checks documentation; builds wheel and
-sdist; and builds and smoke-tests the Windows archive. A tag matching `v<project.version>`
+sdist; and runs both packaged build checks on the Windows archive. A tag matching `v<project.version>`
 publishes a GitHub Release with packages, the portable archive, and SHA-256 checksums.
 
 ## Change checklist

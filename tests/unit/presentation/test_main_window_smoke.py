@@ -205,6 +205,40 @@ def test_main_window_renders_preloaded_project(tmp_path: Path) -> None:
         application.processEvents()
 
 
+def test_main_window_copies_diagnostics_without_project_content(tmp_path: Path) -> None:
+    application = QApplication.instance() or QApplication([])
+    settings = QSettings(str(tmp_path / "diagnostics-ui.ini"), QSettings.Format.IniFormat)
+    workspace = build_workspace(tmp_path / "data")
+    source = tmp_path / "private-location.json"
+    source.write_text('{"private-key": "Secret source text"}', encoding="utf-8")
+    workspace.create_from_json(
+        source,
+        tmp_path / "Confidential project.lfproj",
+        "en",
+        "ru",
+    )
+    window = MainWindow(
+        workspace,
+        layout_store=WindowLayoutStore(settings),
+        recent_projects=RecentProjectsStore(settings),
+    )
+    try:
+        window._copy_diagnostics_button.click()
+        report = application.clipboard().text()
+
+        assert "project_open: true" in report
+        assert "document_count: 1" in report
+        assert "entry_count: 1" in report
+        assert "source_formats: json" in report
+        assert "Confidential project" not in report
+        assert "private-location" not in report
+        assert "private-key" not in report
+        assert "Secret source text" not in report
+    finally:
+        window.close()
+        application.processEvents()
+
+
 def test_main_window_names_next_undo_and_redo_actions(tmp_path: Path) -> None:
     application = QApplication.instance() or QApplication([])
     settings = QSettings(str(tmp_path / "history-ui.ini"), QSettings.Format.IniFormat)

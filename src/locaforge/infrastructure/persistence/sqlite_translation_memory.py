@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -186,5 +188,11 @@ class SQLiteTranslationMemory:
                 """
             )
 
-    def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self._database_path)
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        connection = sqlite3.connect(self._database_path)
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()

@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from locaforge.app.diagnostics import DiagnosticContext, build_diagnostic_report
 from locaforge.application.dto.validation import ValidationCode
 from locaforge.application.project_workspace import ImportFieldMapping, ProjectWorkspace
 from locaforge.application.services.project_context_builder import ProjectContextBuilder
@@ -386,10 +387,18 @@ class MainWindow(QMainWindow):
         self._clear_log_button = QPushButton("Clear logs", self)
         self._clear_log_button.setToolTip("Remove all messages currently shown in the log panel")
         self._clear_log_button.clicked.connect(self._log_view.clear)
+        self._copy_diagnostics_button = QPushButton("Copy diagnostics", self)
+        self._copy_diagnostics_button.setToolTip(
+            "Copy system and project counts without names, paths, or localization content"
+        )
+        self._copy_diagnostics_button.clicked.connect(self._copy_diagnostics)
+        log_buttons = QHBoxLayout()
+        log_buttons.addWidget(self._clear_log_button)
+        log_buttons.addWidget(self._copy_diagnostics_button)
         log_widget = QWidget(self)
         log_layout = QVBoxLayout(log_widget)
         log_layout.addWidget(self._log_view)
-        log_layout.addWidget(self._clear_log_button)
+        log_layout.addLayout(log_buttons)
         logs_dock = QDockWidget("Logs", self)
         logs_dock.setObjectName("logs_dock")
         logs_dock.setWidget(log_widget)
@@ -592,6 +601,9 @@ class MainWindow(QMainWindow):
         self._workspace_tabs.setTabText(0, self._tr("main.translations", "Translations"))
         self._workspace_tabs.setTabText(1, self._tr("main.project", "Project"))
         self._application_settings_action.setText(self._tr("main.settings", "Settings..."))
+        self._copy_diagnostics_button.setText(
+            self._tr("ui.copy_diagnostics", "Copy diagnostics")
+        )
         self._refresh_project()
         if self._localization is not None:
             self._localization.localize_widget(self)
@@ -1446,6 +1458,43 @@ class MainWindow(QMainWindow):
         self._run_project_action(
             self._workspace.redo_last_translation,
             "Last operation redone",
+        )
+
+    def _copy_diagnostics(self) -> None:
+        project = self._workspace.project if self._workspace.has_project else None
+        raw_format_version = (
+            self._workspace.session.metadata.get("format_version")
+            if self._workspace.has_project
+            else None
+        )
+        format_version = (
+            raw_format_version
+            if isinstance(raw_format_version, int) and not isinstance(raw_format_version, bool)
+            else None
+        )
+        report = build_diagnostic_report(
+            DiagnosticContext(
+                ui_locale=self._application_settings.ui_locale,
+                theme=self._application_settings.theme,
+                online_lookup_enabled=self._application_settings.allow_online_project_lookup,
+                project_open=project is not None,
+                project_format_version=format_version,
+                document_count=len(project.documents) if project is not None else 0,
+                entry_count=len(project.entries) if project is not None else 0,
+                source_formats=(
+                    tuple(document.source_format for document in project.documents)
+                    if project is not None
+                    else ()
+                ),
+                project_dirty=project.dirty if project is not None else False,
+            )
+        )
+        application = cast(QApplication | None, QApplication.instance())
+        if application is None:
+            return
+        application.clipboard().setText(report)
+        self.statusBar().showMessage(
+            self._tr("status.diagnostics_copied", "Diagnostic report copied"), 3000
         )
 
     def _copy_source_to_translation(self) -> None:

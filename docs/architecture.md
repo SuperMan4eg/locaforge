@@ -61,8 +61,10 @@ operation. Presentation controllers coordinate these flows without owning busine
 
 A project can contain multiple documents and formats. Stable entry and document identifiers
 support filtering, refresh, history, and batch operations. Schema migrations happen when a
-container is opened; old containers remain readable. Failed opens may recover from the
-automatic `.lfproj.bak` copy without overwriting either original file.
+container is opened; old containers remain readable. Containers verify their ZIP data and SQLite
+database integrity before use. Manual saves atomically replace the target and retain three backup
+generations: `.lfproj.bak` is the newest, followed by `.bak.1` and `.bak.2`. Failed opens may
+recover from the newest backup without overwriting either original file.
 
 ## Extension points
 
