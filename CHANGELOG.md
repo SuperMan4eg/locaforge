@@ -6,6 +6,17 @@ All notable changes to LocaForge are documented in this file.
 
 ## Unreleased
 
+## 0.4.2 — 2026-08-11
+
+- Application workflows are now split into focused services for projects, documents,
+  translation, review, terminology, validation, reporting, and model configuration.
+- The main window is now a composition surface backed by dedicated controllers, action bundles,
+  and widget builders, reducing UI coupling while preserving existing behavior.
+- Architecture documentation now records the orchestration boundaries between the stateful
+  workspace facade, application services, and presentation components.
+- The refactored architecture is covered by expanded unit and smoke tests; the release baseline
+  passes 551 tests together with strict type checking and linting.
+
 ## 0.4.1 — 2026-08-10
 
 - Project containers now verify ZIP members and SQLite integrity before opening or saving.

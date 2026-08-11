@@ -57,6 +57,23 @@ Translation and review resolve the effective [model settings](development.md#mod
 build bounded project context, call the LLM port, validate the result, and record a reversible
 operation. Presentation controllers coordinate these flows without owning business rules.
 
+## Orchestration boundaries
+
+`ProjectWorkspace` is a stateful compatibility facade for the currently open project and
+session. It resolves the project-scoped repository, delegates work, and refreshes the active
+aggregate after persisted changes. Format dispatch, project persistence, import/export,
+translation editing, review, validation, history, terminology, and model configuration live in
+focused services under `application/services`.
+
+`MainWindow` is the Qt composition surface rather than the owner of every interaction. Widget
+builders create cohesive UI bundles, action builders create menu and toolbar bundles, and
+presentation controllers implement navigation, project lifecycle, import/export, translation,
+review, settings, progress, and window policies. Controllers call the stable `ProjectWorkspace`
+API and do not access infrastructure adapters directly.
+
+This split keeps domain decisions and persistence orchestration testable without Qt, while
+allowing the desktop shell to retain a single integration point for project state.
+
 ## Persistence and compatibility
 
 A project can contain multiple documents and formats. Stable entry and document identifiers
