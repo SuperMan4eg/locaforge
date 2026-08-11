@@ -604,7 +604,7 @@ class ProjectWorkspace:
         )
 
     def refresh_after_autosave(self) -> None:
-        self._project = self._project_persistence.refresh(
+        self._project_persistence.refresh_dirty_state(
             self._repository(), self.project
         )
 

@@ -64,5 +64,7 @@ class ProjectPersistenceService:
         self._project_container.save_snapshot(session, session.container_path)
 
     @staticmethod
-    def refresh(repository: ProjectRepository, project: Project) -> Project:
-        return repository.get(project.id)
+    def refresh_dirty_state(
+        repository: ProjectRepository, project: Project
+    ) -> None:
+        project.dirty = repository.is_project_dirty(project.id)

@@ -82,6 +82,13 @@ class TranslationMemoryController(QObject):
         self._timer.stop()
         self._request_id += 1
 
+    def reload_current(self) -> None:
+        """Discard cached matches and reload the currently selected entry."""
+        entry_id = self._current_entry_id
+        self.invalidate()
+        if entry_id is not None:
+            self.refresh(entry_id)
+
     def _start_pending_lookup(self) -> None:
         if self._worker is not None or self._pending_entry_id is None:
             return

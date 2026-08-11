@@ -57,7 +57,7 @@ class TableFiltersStub:
         self.entry_ids = tuple(entry_ids)
 
 
-def make_controller() -> tuple[
+def make_controller(current_entry_id: str | None = "one") -> tuple[
     QualityPanelController,
     QListWidget,
     QLabel,
@@ -81,7 +81,7 @@ def make_controller() -> tuple[
         retranslate_button=buttons[1],
         apply_matching_button=buttons[2],
         table_filters=cast(Any, table_filters),
-        current_entry_id=lambda: "one",
+        current_entry_id=lambda: current_entry_id,
         is_busy=lambda: False,
         select_entry=selected.append,
     )
@@ -139,4 +139,15 @@ def test_busy_state_disables_current_entry_actions() -> None:
     controller.refresh()
 
     assert application is not None
+    assert all(button.isEnabled() is False for button in buttons)
+
+
+def test_refresh_ignores_selection_from_the_previous_project() -> None:
+    application = QApplication.instance() or QApplication([])
+    controller, _, current_issues, buttons, _, _ = make_controller("removed-entry")
+
+    controller.refresh()
+
+    assert application is not None
+    assert current_issues.text() == "No validation issues"
     assert all(button.isEnabled() is False for button in buttons)

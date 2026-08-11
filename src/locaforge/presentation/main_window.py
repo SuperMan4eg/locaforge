@@ -1319,7 +1319,7 @@ class MainWindow(QMainWindow):
     def _open_translation_memory_editor(self) -> None:
         dialog = TranslationMemoryDialog(self._workspace, self)
         dialog.exec()
-        self._memory.invalidate()
+        self._memory.reload_current()
 
     def _show_translation_error(self, title: str, message: str) -> None:
         QMessageBox.critical(self, title, message)

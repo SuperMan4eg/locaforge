@@ -100,6 +100,15 @@ class SQLiteProjectRepository:
             if cursor.rowcount == 0:
                 raise ProjectNotFoundError(f"Project {project_id!r} was not found")
 
+    def is_project_dirty(self, project_id: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT dirty FROM projects WHERE id = ?", (project_id,)
+            ).fetchone()
+        if row is None:
+            raise ProjectNotFoundError(f"Project {project_id!r} was not found")
+        return bool(row["dirty"])
+
     def get_entry(self, project_id: str, entry_id: str) -> TranslationEntry:
         return self.get_entries(project_id, (entry_id,))[0]
 

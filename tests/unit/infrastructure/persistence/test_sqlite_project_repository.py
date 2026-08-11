@@ -108,6 +108,25 @@ def test_update_entry_persists_the_change_and_marks_project_dirty(tmp_path: Path
     assert restored.dirty is True
 
 
+def test_dirty_state_can_be_read_without_loading_the_project(tmp_path: Path) -> None:
+    repository = SQLiteProjectRepository(tmp_path / "project.db")
+    project = make_project()
+    repository.create(project)
+
+    assert repository.is_project_dirty(project.id) is False
+
+    repository.mark_project_dirty(project.id)
+
+    assert repository.is_project_dirty(project.id) is True
+
+
+def test_reading_dirty_state_rejects_a_missing_project(tmp_path: Path) -> None:
+    repository = SQLiteProjectRepository(tmp_path / "project.db")
+
+    with pytest.raises(ProjectNotFoundError):
+        repository.is_project_dirty("missing")
+
+
 def test_missing_objects_have_specific_errors(tmp_path: Path) -> None:
     repository = SQLiteProjectRepository(tmp_path / "project.db")
 

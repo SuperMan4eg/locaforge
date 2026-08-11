@@ -6,7 +6,7 @@ LocaForge is a local-first desktop CAT platform for translating games, applicati
 and software with local language models. Source files stay on the user's computer and
 are never modified in place.
 
-> The project is under active development. Current version: `0.5.0`.
+> The project is under active development. Current version: `0.5.1`.
 
 ## Features
 
@@ -27,7 +27,7 @@ are never modified in place.
 
 ### Windows portable build
 
-Download `LocaForge-0.5.0-windows-x64.zip` from the
+Download `LocaForge-0.5.1-windows-x64.zip` from the
 [latest release](https://github.com/SuperMan4eg/locaforge/releases/latest), extract it,
 and run `LocaForge.exe`. Python is included; Ollama is installed separately.
 

@@ -6,6 +6,14 @@ All notable changes to LocaForge are documented in this file.
 
 ## Unreleased
 
+## 0.5.1 — 2026-08-11
+
+- Translation-memory suggestions now reload immediately after records are edited, so the current
+  entry in a newly created project no longer keeps an empty or stale suggestion list.
+- Autosave now refreshes only the persisted dirty flag instead of replacing the live project, and
+  SQLite snapshots use smaller backup batches to reduce contention with foreground edits.
+- The quality panel now safely clears selections left over from a previously open project.
+
 ## 0.5.0 — 2026-08-11
 
 - Added a reproducible performance baseline for 1,000-, 10,000-, and 50,000-entry projects,

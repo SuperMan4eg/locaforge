@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QComboBox, QLabel, QListWidget, QListWidgetItem, Q
 
 from locaforge.application.dto.validation import EntryValidationIssue, ValidationCode
 from locaforge.application.project_workspace import ProjectWorkspace
-from locaforge.domain.entry import EntryStatus
+from locaforge.domain.entry import EntryStatus, TranslationEntry
 from locaforge.presentation.translation_filter_controller import TranslationFilterController
 from locaforge.presentation.validation_filter import (
     filter_validation_issues,
@@ -49,6 +49,7 @@ class QualityPanelController(QObject):
         self._is_busy = is_busy
         self._select_entry = select_entry
         self._issues_by_entry: dict[str, tuple[EntryValidationIssue, ...]] = {}
+        self._entries_by_id: dict[str, TranslationEntry] = {}
         category_filter.currentIndexChanged.connect(self.refresh)
         issue_list.itemActivated.connect(self._activate_issue)
 
@@ -59,11 +60,14 @@ class QualityPanelController(QObject):
     def refresh(self) -> None:
         self._issue_list.clear()
         self._issues_by_entry.clear()
+        self._entries_by_id.clear()
         if not self._workspace.has_project:
             self._table_filters.set_issue_entries(())
             self.refresh_current()
             return
-        entries_by_id = {entry.id: entry for entry in self._workspace.project.entries}
+        self._entries_by_id = {
+            entry.id: entry for entry in self._workspace.project.entries
+        }
         all_issues = self._workspace.validation_issues()
         grouped_issues: dict[str, list[EntryValidationIssue]] = {}
         for issue in all_issues:
@@ -82,7 +86,7 @@ class QualityPanelController(QObject):
         else:
             issue_groups = tuple(group_attention_issues((issue,))[0] for issue in issues)
         for issue_group in issue_groups:
-            entry = entries_by_id.get(issue_group.entry_ids[0])
+            entry = self._entries_by_id.get(issue_group.entry_ids[0])
             path = (
                 "/".join(str(part) for part in entry.key_path)
                 if entry is not None
@@ -103,7 +107,8 @@ class QualityPanelController(QObject):
 
     def refresh_current(self) -> None:
         entry_id = self._current_entry_id()
-        if entry_id is None or not self._workspace.has_project:
+        entry = self._entries_by_id.get(entry_id) if entry_id is not None else None
+        if entry_id is None or entry is None or not self._workspace.has_project:
             self._current_issues.setText("No validation issues")
             self._dismiss_ai_button.setEnabled(False)
             self._retranslate_button.setEnabled(False)
@@ -115,7 +120,6 @@ class QualityPanelController(QObject):
         self._dismiss_ai_button.setEnabled(
             not busy and any(issue.code is ValidationCode.AI_REVIEW for issue in issues)
         )
-        entry = self._workspace.project.get_entry(entry_id)
         self._retranslate_button.setEnabled(
             not busy and not entry.locked and entry.status is not EntryStatus.APPROVED
         )
