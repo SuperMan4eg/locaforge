@@ -6,9 +6,16 @@ import re
 import sqlite3
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 from locaforge.domain.glossary import GlossaryTerm
+
+
+@dataclass(frozen=True, slots=True)
+class _CompiledGlossaryTerm:
+    term: GlossaryTerm
+    source_pattern: re.Pattern[str]
 
 
 class SQLiteGlossary:
@@ -16,6 +23,9 @@ class SQLiteGlossary:
 
     def __init__(self, database_path: Path) -> None:
         self._database_path = database_path
+        self._term_cache: dict[
+            tuple[str, str], tuple[_CompiledGlossaryTerm, ...]
+        ] = {}
         database_path.parent.mkdir(parents=True, exist_ok=True)
         self._create_schema()
 
@@ -37,6 +47,7 @@ class SQLiteGlossary:
                     int(term.case_sensitive),
                 ),
             )
+        self._invalidate_pair(term.source_language, term.target_language)
 
     def remove(self, term: GlossaryTerm) -> None:
         with self._connect() as connection:
@@ -55,23 +66,18 @@ class SQLiteGlossary:
                     int(term.case_sensitive),
                 ),
             )
+        self._invalidate_pair(term.source_language, term.target_language)
 
     def list_terms(
         self,
         source_language: str,
         target_language: str,
     ) -> tuple[GlossaryTerm, ...]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT source_language, target_language, source, target, case_sensitive
-                FROM glossary
-                WHERE source_language = ? AND target_language = ?
-                ORDER BY source COLLATE NOCASE, case_sensitive
-                """,
-                (source_language, target_language),
-            ).fetchall()
-        return tuple(self._term_from_row(row) for row in rows)
+        terms = (
+            compiled.term
+            for compiled in self._compiled_terms(source_language, target_language)
+        )
+        return tuple(sorted(terms, key=self._list_sort_key))
 
     def find_for_sources(
         self,
@@ -79,8 +85,64 @@ class SQLiteGlossary:
         target_language: str,
         sources: Sequence[str],
     ) -> tuple[GlossaryTerm, ...]:
+        matched: list[GlossaryTerm] = []
+        seen: set[GlossaryTerm] = set()
+        for source_matches in self.find_for_sources_batch(
+            source_language, target_language, sources
+        ):
+            for term in source_matches:
+                if term not in seen:
+                    seen.add(term)
+                    matched.append(term)
+        matched.sort(key=self._match_sort_key)
+        return tuple(matched)
+
+    def find_for_sources_batch(
+        self,
+        source_language: str,
+        target_language: str,
+        sources: Sequence[str],
+    ) -> tuple[tuple[GlossaryTerm, ...], ...]:
+        """Return relevant terms for each source while loading a language pair once."""
         if not sources:
             return ()
+        compiled_terms = self._compiled_terms(source_language, target_language)
+        return tuple(
+            tuple(
+                compiled.term
+                for compiled in compiled_terms
+                if compiled.source_pattern.search(source) is not None
+            )
+            for source in sources
+        )
+
+    def _compiled_terms(
+        self, source_language: str, target_language: str
+    ) -> tuple[_CompiledGlossaryTerm, ...]:
+        pair = (source_language, target_language)
+        cached = self._term_cache.get(pair)
+        if cached is not None:
+            return cached
+        terms = sorted(
+            self._read_terms(source_language, target_language),
+            key=self._match_sort_key,
+        )
+        compiled = tuple(
+            _CompiledGlossaryTerm(
+                term,
+                re.compile(
+                    rf"(?<!\w){re.escape(term.source)}(?!\w)",
+                    0 if term.case_sensitive else re.IGNORECASE,
+                ),
+            )
+            for term in terms
+        )
+        self._term_cache[pair] = compiled
+        return compiled
+
+    def _read_terms(
+        self, source_language: str, target_language: str
+    ) -> tuple[GlossaryTerm, ...]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
@@ -90,20 +152,18 @@ class SQLiteGlossary:
                 """,
                 (source_language, target_language),
             ).fetchall()
-        terms = tuple(self._term_from_row(row) for row in rows)
-        matched = [
-            term
-            for term in terms
-            if any(self._contains_term(source, term) for source in sources)
-        ]
-        matched.sort(key=lambda term: (-len(term.source), term.source.casefold()))
-        return tuple(matched)
+        return tuple(self._term_from_row(row) for row in rows)
+
+    def _invalidate_pair(self, source_language: str, target_language: str) -> None:
+        self._term_cache.pop((source_language, target_language), None)
 
     @staticmethod
-    def _contains_term(text: str, term: GlossaryTerm) -> bool:
-        flags = 0 if term.case_sensitive else re.IGNORECASE
-        pattern = rf"(?<!\w){re.escape(term.source)}(?!\w)"
-        return re.search(pattern, text, flags) is not None
+    def _match_sort_key(term: GlossaryTerm) -> tuple[int, str]:
+        return (-len(term.source), term.source.casefold())
+
+    @staticmethod
+    def _list_sort_key(term: GlossaryTerm) -> tuple[str, bool, str, str]:
+        return (term.source.casefold(), term.case_sensitive, term.source, term.target)
 
     @staticmethod
     def _term_from_row(row: tuple[object, ...]) -> GlossaryTerm:

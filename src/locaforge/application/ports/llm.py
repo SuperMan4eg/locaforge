@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
+from locaforge.application.dto.model_performance import ModelPerformanceSnapshot
 from locaforge.application.dto.project_description import (
     ProjectDescriptionRequest,
     ProjectDescriptionResponse,
@@ -26,3 +27,10 @@ class LLMClient(Protocol):
     def translate(self, request: TranslationRequest) -> TranslationResponse: ...
 
     def review(self, request: ReviewRequest) -> ReviewResponse: ...
+
+
+@runtime_checkable
+class ModelPerformanceProvider(Protocol):
+    """Optional capability implemented by model clients that expose safe metrics."""
+
+    def performance_snapshot(self) -> ModelPerformanceSnapshot: ...

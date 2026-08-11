@@ -26,12 +26,12 @@ class SaveProjectFile:
         project = repository.get(session.project_id)
         was_dirty = project.dirty
         project.mark_saved()
-        repository.save(project)
+        repository.mark_project_saved(project.id)
         try:
             self._project_container.save(session, target_path)
         except Exception:
             if was_dirty:
                 project.dirty = True
-                repository.save(project)
+                repository.mark_project_dirty(project.id)
             raise
         return project

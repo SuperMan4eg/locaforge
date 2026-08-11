@@ -49,7 +49,7 @@ def test_generates_profile_with_normalized_name_and_online_context() -> None:
 
     profile = service.generate(
         "  Nebula  ",
-        ModelSettings(model="model-a", timeout_seconds=42),
+        ModelSettings(model="model-a", timeout_seconds=42, keep_alive_seconds=900),
         use_online_lookup=True,
     )
 
@@ -58,6 +58,7 @@ def test_generates_profile_with_normalized_name_and_online_context() -> None:
     request = llm.requests[0]
     assert request.name == "Nebula"
     assert request.research_context == "Research context"
+    assert request.keep_alive_seconds == 900
 
 
 def test_generation_requires_backend_name_and_configured_lookup() -> None:

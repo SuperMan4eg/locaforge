@@ -24,6 +24,10 @@ class ProjectRepository(Protocol):
 
     def get_entry(self, project_id: str, entry_id: str) -> TranslationEntry: ...
 
+    def get_entries(
+        self, project_id: str, entry_ids: Sequence[str]
+    ) -> tuple[TranslationEntry, ...]: ...
+
     def update_entry(self, project_id: str, entry: TranslationEntry) -> None: ...
 
     def update_entries(

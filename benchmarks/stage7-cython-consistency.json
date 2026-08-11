@@ -1,0 +1,16 @@
+{
+  "size": 50000,
+  "warmups": 10,
+  "iterations": 50,
+  "python": {
+    "median_ms": 15.38675,
+    "minimum_ms": 14.6049,
+    "maximum_ms": 24.3979
+  },
+  "cython": {
+    "median_ms": 15.34775,
+    "minimum_ms": 14.3668,
+    "maximum_ms": 23.6418
+  },
+  "speedup": 1.002541
+}

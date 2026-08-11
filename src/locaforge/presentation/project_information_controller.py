@@ -69,6 +69,7 @@ class ProjectInformationController:
                     else ()
                 ),
                 project_dirty=project.dirty if project is not None else False,
+                model_performance=self._workspace.model_performance_snapshot(),
             )
         )
         if self._copy_text(report):

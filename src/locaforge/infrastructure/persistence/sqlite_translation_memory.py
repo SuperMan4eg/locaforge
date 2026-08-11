@@ -5,13 +5,20 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from difflib import SequenceMatcher
+from math import ceil, floor
 from pathlib import Path
+
+from rapidfuzz.fuzz import ratio as rapidfuzz_ratio
 
 from locaforge.domain.translation_memory import (
     TranslationMemoryMatch,
     TranslationMemoryRecord,
 )
+
+
+def _similarity_ratio(left: str, right: str, minimum_score: float) -> float:
+    score = rapidfuzz_ratio(left, right, score_cutoff=minimum_score * 100.0)
+    return float(score) / 100.0
 
 
 class SQLiteTranslationMemory:
@@ -29,10 +36,12 @@ class SQLiteTranslationMemory:
             connection.execute(
                 """
                 INSERT INTO translation_memory (
-                    source_language, target_language, source, context, translation
-                ) VALUES (?, ?, ?, ?, ?)
+                    source_language, target_language, source, context, translation, source_length
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(source_language, target_language, source, context)
-                DO UPDATE SET translation = excluded.translation
+                DO UPDATE SET
+                    translation = excluded.translation,
+                    source_length = excluded.source_length
                 """,
                 (
                     record.source_language,
@@ -40,6 +49,7 @@ class SQLiteTranslationMemory:
                     record.source,
                     record.context,
                     record.translation,
+                    len(record.source),
                 ),
             )
 
@@ -128,26 +138,54 @@ class SQLiteTranslationMemory:
             raise ValueError("Minimum translation memory score must be between 0 and 1")
         if not source:
             return ()
+        source_length = len(source)
+        length_bounds = self._candidate_length_bounds(source_length, minimum_score)
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT source_language, target_language, source, translation, context
-                FROM translation_memory
-                WHERE source_language = ? AND target_language = ?
-                ORDER BY
-                    context = ? DESC,
-                    ABS(LENGTH(source) - ?) ASC,
-                    source ASC
-                LIMIT ?
-                """,
-                (
-                    source_language,
-                    target_language,
-                    context,
-                    len(source),
-                    self._MAX_SIMILAR_CANDIDATES,
-                ),
-            ).fetchall()
+            if length_bounds is None:
+                rows = connection.execute(
+                    """
+                    SELECT source_language, target_language, source, translation, context
+                    FROM translation_memory
+                    WHERE source_language = ? AND target_language = ?
+                    ORDER BY
+                        context = ? DESC,
+                        ABS(source_length - ?) ASC,
+                        source ASC
+                    LIMIT ?
+                    """,
+                    (
+                        source_language,
+                        target_language,
+                        context,
+                        source_length,
+                        self._MAX_SIMILAR_CANDIDATES,
+                    ),
+                ).fetchall()
+            else:
+                minimum_length, maximum_length = length_bounds
+                rows = connection.execute(
+                    """
+                    SELECT source_language, target_language, source, translation, context
+                    FROM translation_memory
+                    WHERE source_language = ?
+                      AND target_language = ?
+                      AND source_length BETWEEN ? AND ?
+                    ORDER BY
+                        context = ? DESC,
+                        ABS(source_length - ?) ASC,
+                        source ASC
+                    LIMIT ?
+                    """,
+                    (
+                        source_language,
+                        target_language,
+                        minimum_length,
+                        maximum_length,
+                        context,
+                        source_length,
+                        self._MAX_SIMILAR_CANDIDATES,
+                    ),
+                ).fetchall()
 
         normalized_source = source.casefold()
         matches: list[TranslationMemoryMatch] = []
@@ -159,9 +197,11 @@ class SQLiteTranslationMemory:
                 translation=str(row[3]),
                 context=str(row[4]),
             )
-            score = SequenceMatcher(
-                None, normalized_source, record.source.casefold()
-            ).ratio()
+            score = _similarity_ratio(
+                normalized_source,
+                record.source.casefold(),
+                minimum_score,
+            )
             if score >= minimum_score:
                 matches.append(TranslationMemoryMatch(record, score))
         matches.sort(
@@ -173,6 +213,17 @@ class SQLiteTranslationMemory:
         )
         return tuple(matches[:limit])
 
+    @staticmethod
+    def _candidate_length_bounds(
+        source_length: int, minimum_score: float
+    ) -> tuple[int, int] | None:
+        """Return lengths that can still reach the requested similarity score."""
+        if minimum_score == 0.0:
+            return None
+        minimum_length = ceil(minimum_score * source_length / (2.0 - minimum_score))
+        maximum_length = floor(source_length * (2.0 - minimum_score) / minimum_score)
+        return minimum_length, maximum_length
+
     def _create_schema(self) -> None:
         with self._connect() as connection:
             connection.execute(
@@ -183,9 +234,28 @@ class SQLiteTranslationMemory:
                     source TEXT NOT NULL,
                     context TEXT NOT NULL DEFAULT '',
                     translation TEXT NOT NULL,
+                    source_length INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (source_language, target_language, source, context)
                 )
                 """
+            )
+            columns = {
+                str(row[1])
+                for row in connection.execute(
+                    "PRAGMA table_info(translation_memory)"
+                ).fetchall()
+            }
+            if "source_length" not in columns:
+                connection.execute(
+                    "ALTER TABLE translation_memory ADD COLUMN "
+                    "source_length INTEGER NOT NULL DEFAULT 0"
+                )
+                connection.execute(
+                    "UPDATE translation_memory SET source_length = LENGTH(source)"
+                )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS translation_memory_similarity_candidates "
+                "ON translation_memory(source_language, target_language, source_length)"
             )
 
     @contextmanager

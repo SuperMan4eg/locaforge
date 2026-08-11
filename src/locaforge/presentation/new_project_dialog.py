@@ -108,6 +108,14 @@ class NewProjectDialog(QDialog):
         self.model_batch_size = QSpinBox(self.model_settings_group)
         self.model_batch_size.setRange(1, 1000)
         self.model_batch_size.setValue(initial_model_settings.batch_size)
+        self.model_keep_alive = QSpinBox(self.model_settings_group)
+        self.model_keep_alive.setRange(-1, 86_400)
+        self.model_keep_alive.setSpecialValueText("Keep loaded")
+        self.model_keep_alive.setSuffix(" s")
+        self.model_keep_alive.setValue(initial_model_settings.keep_alive_seconds)
+        self.model_keep_alive.setToolTip(
+            "How long Ollama keeps the model in memory; -1 keeps it loaded, 0 unloads it"
+        )
         self.translation_prompt = QPlainTextEdit(self.model_settings_group)
         self.translation_prompt.setPlainText(initial_model_settings.system_prompt)
         self.translation_prompt.setMaximumHeight(80)
@@ -122,6 +130,7 @@ class NewProjectDialog(QDialog):
         model_form.addRow("Reviewer reasoning", self.review_reasoning)
         model_form.addRow("Timeout", self.model_timeout)
         model_form.addRow("Batch size", self.model_batch_size)
+        model_form.addRow("Keep model loaded", self.model_keep_alive)
         model_form.addRow("Translation prompt", self.translation_prompt)
         model_form.addRow("Reviewer prompt", self.review_prompt)
         model_layout = QVBoxLayout(self.model_settings_group)
@@ -237,6 +246,7 @@ class NewProjectDialog(QDialog):
             batch_size=self.model_batch_size.value(),
             system_prompt=self.translation_prompt.toPlainText(),
             review_prompt=self.review_prompt.toPlainText(),
+            keep_alive_seconds=self.model_keep_alive.value(),
         )
 
     def project_values(self) -> tuple[str, str, str, ProjectProfile]:

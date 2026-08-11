@@ -1,0 +1,386 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-11T14:27:37.838756+00:00",
+  "environment": {
+    "python": "3.14.6",
+    "python_implementation": "CPython",
+    "pyside": "6.11.1",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "Intel64 Family 6 Model 198 Stepping 2, GenuineIntel",
+    "sqlite": "3.50.4"
+  },
+  "configuration": {
+    "sizes": [
+      1
+    ],
+    "iterations": 3,
+    "warmups": 1,
+    "documents": 1,
+    "translation_memory_records": 1,
+    "glossary_sources": 1,
+    "glossary_terms": 1,
+    "startup_included": false,
+    "ollama_included": true,
+    "ollama_batch_sizes": [
+      5,
+      10,
+      20,
+      40
+    ],
+    "ollama_keep_alive_seconds": -1
+  },
+  "results": [
+    {
+      "scenario": "project_entry_lookup_1000",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 0.0014,
+      "p95_ms": 0.0035,
+      "minimum_ms": 0.0006,
+      "maximum_ms": 0.0035,
+      "samples_ms": [
+        0.0035,
+        0.0014,
+        0.0006
+      ],
+      "details": {
+        "lookups": 1
+      }
+    },
+    {
+      "scenario": "project_statistics",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 0.0028,
+      "p95_ms": 0.0057,
+      "minimum_ms": 0.0021,
+      "maximum_ms": 0.0057,
+      "samples_ms": [
+        0.0057,
+        0.0028,
+        0.0021
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "table_text_filter",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 0.0063,
+      "p95_ms": 0.0159,
+      "minimum_ms": 0.0043,
+      "maximum_ms": 0.0159,
+      "samples_ms": [
+        0.0159,
+        0.0063,
+        0.0043
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "table_document_filter",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 0.0032,
+      "p95_ms": 0.0044,
+      "minimum_ms": 0.0031,
+      "maximum_ms": 0.0044,
+      "samples_ms": [
+        0.0044,
+        0.0032,
+        0.0031
+      ],
+      "details": {
+        "documents": 1
+      }
+    },
+    {
+      "scenario": "table_update_last_entry",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 0.0106,
+      "p95_ms": 0.014,
+      "minimum_ms": 0.0086,
+      "maximum_ms": 0.014,
+      "samples_ms": [
+        0.014,
+        0.0106,
+        0.0086
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "project_explorer_refresh",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 0.088,
+      "p95_ms": 0.1276,
+      "minimum_ms": 0.0728,
+      "maximum_ms": 0.1276,
+      "samples_ms": [
+        0.1276,
+        0.088,
+        0.0728
+      ],
+      "details": {
+        "documents": 1
+      }
+    },
+    {
+      "scenario": "open_lfproj",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 3.1352,
+      "p95_ms": 3.2414,
+      "minimum_ms": 3.0532,
+      "maximum_ms": 3.2414,
+      "samples_ms": [
+        3.0532,
+        3.2414,
+        3.1352
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "edit_translation",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 7.8065,
+      "p95_ms": 8.0137,
+      "minimum_ms": 7.5633,
+      "maximum_ms": 8.0137,
+      "samples_ms": [
+        7.8065,
+        7.5633,
+        8.0137
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "undo_redo_cycle",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 7.3436,
+      "p95_ms": 7.5203,
+      "minimum_ms": 6.9138,
+      "maximum_ms": 7.5203,
+      "samples_ms": [
+        7.5203,
+        6.9138,
+        7.3436
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "validate_project",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 0.8912,
+      "p95_ms": 1.07,
+      "minimum_ms": 0.8619,
+      "maximum_ms": 1.07,
+      "samples_ms": [
+        1.07,
+        0.8912,
+        0.8619
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "repository_full_save",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 3.474,
+      "p95_ms": 3.8334,
+      "minimum_ms": 3.4435,
+      "maximum_ms": 3.8334,
+      "samples_ms": [
+        3.8334,
+        3.4435,
+        3.474
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "manual_save_lfproj",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 3.3175,
+      "p95_ms": 3.5076,
+      "minimum_ms": 3.1114,
+      "maximum_ms": 3.5076,
+      "samples_ms": [
+        3.5076,
+        3.1114,
+        3.3175
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "autosave_lfproj",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 5.9239,
+      "p95_ms": 6.805,
+      "minimum_ms": 5.4237,
+      "maximum_ms": 6.805,
+      "samples_ms": [
+        6.805,
+        5.9239,
+        5.4237
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "translation_memory_similar",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 0.2475,
+      "p95_ms": 0.2794,
+      "minimum_ms": 0.2437,
+      "maximum_ms": 0.2794,
+      "samples_ms": [
+        0.2794,
+        0.2475,
+        0.2437
+      ],
+      "details": {
+        "candidate_limit": 300,
+        "scorer": "rapidfuzz.ratio"
+      }
+    },
+    {
+      "scenario": "glossary_batch_match",
+      "size": 1,
+      "iterations": 3,
+      "median_ms": 0.0019,
+      "p95_ms": 0.0041,
+      "minimum_ms": 0.0014,
+      "maximum_ms": 0.0041,
+      "samples_ms": [
+        0.0041,
+        0.0019,
+        0.0014
+      ],
+      "details": {
+        "terms": 1
+      }
+    },
+    {
+      "scenario": "ollama_generate_batch",
+      "size": 5,
+      "iterations": 3,
+      "median_ms": 2437.0277,
+      "p95_ms": 4027.5131,
+      "minimum_ms": 2425.6693,
+      "maximum_ms": 4027.5131,
+      "samples_ms": [
+        2437.0277,
+        2425.6693,
+        4027.5131
+      ],
+      "details": {
+        "model": "gemma4:12b",
+        "keep_alive_seconds": -1,
+        "median_total_duration": 2414947300,
+        "median_load_duration": 376518700,
+        "median_prompt_eval_count": 155,
+        "median_prompt_eval_duration": 98203000,
+        "median_eval_count": 95,
+        "median_eval_duration": 1933070000,
+        "offered_entries_per_minute": 124.226,
+        "median_returned_entries": 5,
+        "completion_percent": 100.0,
+        "returned_entries_per_minute": 124.226,
+        "generation_tokens_per_second": 49.017
+      }
+    },
+    {
+      "scenario": "ollama_generate_batch",
+      "size": 10,
+      "iterations": 3,
+      "median_ms": 5180.624,
+      "p95_ms": 5817.9183,
+      "minimum_ms": 4361.9193,
+      "maximum_ms": 5817.9183,
+      "samples_ms": [
+        5817.9183,
+        4361.9193,
+        5180.624
+      ],
+      "details": {
+        "model": "gemma4:12b",
+        "keep_alive_seconds": -1,
+        "median_total_duration": 5159788600,
+        "median_load_duration": 377901300,
+        "median_prompt_eval_count": 250,
+        "median_prompt_eval_duration": 139563000,
+        "median_eval_count": 225,
+        "median_eval_duration": 4639769000,
+        "offered_entries_per_minute": 116.284,
+        "median_returned_entries": 10,
+        "completion_percent": 100.0,
+        "returned_entries_per_minute": 116.284,
+        "generation_tokens_per_second": 48.505
+      }
+    },
+    {
+      "scenario": "ollama_generate_batch",
+      "size": 20,
+      "iterations": 3,
+      "median_ms": 11314.8317,
+      "p95_ms": 11569.8633,
+      "minimum_ms": 11278.5548,
+      "maximum_ms": 11569.8633,
+      "samples_ms": [
+        11278.5548,
+        11569.8633,
+        11314.8317
+      ],
+      "details": {
+        "model": "gemma4:12b",
+        "keep_alive_seconds": -1,
+        "median_total_duration": 11294645900,
+        "median_load_duration": 379179000,
+        "median_prompt_eval_count": 460,
+        "median_prompt_eval_duration": 178656000,
+        "median_eval_count": 513,
+        "median_eval_duration": 10733547000,
+        "offered_entries_per_minute": 106.245,
+        "median_returned_entries": 20,
+        "completion_percent": 100.0,
+        "returned_entries_per_minute": 106.245,
+        "generation_tokens_per_second": 47.761
+      }
+    },
+    {
+      "scenario": "ollama_generate_batch",
+      "size": 40,
+      "iterations": 3,
+      "median_ms": 22477.3063,
+      "p95_ms": 22790.9752,
+      "minimum_ms": 17181.5993,
+      "maximum_ms": 22790.9752,
+      "samples_ms": [
+        22790.9752,
+        17181.5993,
+        22477.3063
+      ],
+      "details": {
+        "model": "gemma4:12b",
+        "keep_alive_seconds": -1,
+        "median_total_duration": 22457004600,
+        "median_load_duration": 377441100,
+        "median_prompt_eval_count": 880,
+        "median_prompt_eval_duration": 276924000,
+        "median_eval_count": 1033,
+        "median_eval_duration": 21796986000,
+        "offered_entries_per_minute": 106.871,
+        "median_returned_entries": 40,
+        "completion_percent": 100.0,
+        "returned_entries_per_minute": 106.871,
+        "generation_tokens_per_second": 47.421
+      }
+    }
+  ]
+}

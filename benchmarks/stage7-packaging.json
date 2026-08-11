@@ -1,0 +1,72 @@
+{
+  "warmups": 3,
+  "iterations": 20,
+  "results": [
+    {
+      "label": "pyinstaller",
+      "executable": "D:\\Giga-Projects\\build\\stage7-pyinstaller\\dist\\LocaForge\\LocaForge.exe",
+      "sha256": "645af14bec5d23ee008641cbfd1bdffd3114bc13f0443a9b83847b9d6a443686",
+      "distribution_bytes": 128884164,
+      "iterations": 20,
+      "startup_median_ms": 347.46925,
+      "startup_p95_ms": 352.0578,
+      "startup_minimum_ms": 341.2041,
+      "startup_maximum_ms": 356.8485,
+      "samples_ms": [
+        347.1361,
+        347.6826,
+        347.9713,
+        349.1101,
+        352.0578,
+        349.0896,
+        342.7301,
+        345.7228,
+        341.2041,
+        344.6805,
+        350.5105,
+        348.3171,
+        349.6517,
+        346.7197,
+        356.8485,
+        349.1986,
+        344.4591,
+        343.2576,
+        345.929,
+        347.2559
+      ]
+    },
+    {
+      "label": "nuitka",
+      "executable": "D:\\Giga-Projects\\build\\stage7-nuitka\\locaforge.dist\\LocaForge-Nuitka.exe",
+      "sha256": "b78094b1b0ab69a5d3af171d1a1f41e53d70c2c686feffd111c37824c023f055",
+      "distribution_bytes": 92619856,
+      "iterations": 20,
+      "startup_median_ms": 315.0662,
+      "startup_p95_ms": 318.1714,
+      "startup_minimum_ms": 311.1092,
+      "startup_maximum_ms": 320.2938,
+      "samples_ms": [
+        315.3731,
+        320.2938,
+        318.1714,
+        317.4575,
+        317.4601,
+        316.4017,
+        315.5247,
+        313.6765,
+        315.5795,
+        313.3684,
+        315.4406,
+        311.1092,
+        313.883,
+        314.7593,
+        313.1144,
+        314.5182,
+        313.6389,
+        315.9273,
+        312.1803,
+        312.6266
+      ]
+    }
+  ]
+}

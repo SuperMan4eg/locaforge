@@ -76,6 +76,15 @@ class OllamaSettingsDialog(QDialog):
         self._batch_size.setRange(1, 1000)
         self._batch_size.setValue(settings.batch_size)
 
+        self._keep_alive = QSpinBox(self)
+        self._keep_alive.setRange(-1, 86_400)
+        self._keep_alive.setSpecialValueText("Keep loaded")
+        self._keep_alive.setSuffix(" s")
+        self._keep_alive.setValue(settings.keep_alive_seconds)
+        self._keep_alive.setToolTip(
+            "How long Ollama keeps the model in memory; -1 keeps it loaded, 0 unloads it"
+        )
+
         self._system_prompt = QPlainTextEdit(self)
         self._system_prompt.setPlaceholderText(
             "Optional style, tone, terminology, or project-specific instructions"
@@ -99,6 +108,7 @@ class OllamaSettingsDialog(QDialog):
         general_form.addRow("Reviewer reasoning", self._review_reasoning)
         general_form.addRow("Timeout", self._timeout)
         general_form.addRow("Batch size", self._batch_size)
+        general_form.addRow("Keep model loaded", self._keep_alive)
 
         prompts_tab = QWidget(self)
         prompts_form = QFormLayout(prompts_tab)
@@ -134,6 +144,7 @@ class OllamaSettingsDialog(QDialog):
             review_model=(review_model if review_model != translation_model else ""),
             translation_reasoning=self._translation_reasoning.currentData(),
             review_reasoning=self._review_reasoning.currentData(),
+            keep_alive_seconds=self._keep_alive.value(),
         )
 
     def save_as_default(self) -> bool:

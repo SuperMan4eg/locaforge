@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from functools import lru_cache
 
 from locaforge.application.dto.validation import ValidationCode, ValidationIssue
 from locaforge.domain.glossary import GlossaryTerm
@@ -36,5 +37,9 @@ class GlossaryValidator:
 
     @staticmethod
     def _contains(text: str, term: str, flags: int) -> bool:
-        pattern = rf"(?<!\w){re.escape(term)}(?!\w)"
-        return re.search(pattern, text, flags) is not None
+        return GlossaryValidator._pattern(term, flags).search(text) is not None
+
+    @staticmethod
+    @lru_cache(maxsize=2048)
+    def _pattern(term: str, flags: int) -> re.Pattern[str]:
+        return re.compile(rf"(?<!\w){re.escape(term)}(?!\w)", flags)

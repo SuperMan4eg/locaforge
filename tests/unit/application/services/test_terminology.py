@@ -59,6 +59,9 @@ class Glossary:
     def find_for_sources(self, *_args: object) -> tuple[()]:
         return ()
 
+    def find_for_sources_batch(self, *_args: object) -> tuple[()]:
+        return ()
+
 
 class GlossaryCsv:
     def __init__(self, imported: tuple[GlossaryTerm, ...] = ()) -> None:

@@ -53,7 +53,15 @@ def test_translate_sends_ollama_request_and_parses_json(monkeypatch: pytest.Monk
         captured["payload"] = json.loads(request.data.decode("utf-8"))
         captured["timeout"] = timeout
         return FakeHttpResponse(
-            {"response": '{"translations":[{"entry_id":"entry-1","translation":"Привет"}]}' }
+            {
+                "response": '{"translations":[{"entry_id":"entry-1","translation":"Привет"}]}',
+                "total_duration": 2_000_000_000,
+                "load_duration": 100_000_000,
+                "prompt_eval_count": 40,
+                "prompt_eval_duration": 400_000_000,
+                "eval_count": 20,
+                "eval_duration": 1_000_000_000,
+            }
         )
 
     monkeypatch.setattr("locaforge.infrastructure.llm.ollama_client.urlopen", fake_urlopen)
@@ -69,9 +77,43 @@ def test_translate_sends_ollama_request_and_parses_json(monkeypatch: pytest.Monk
             "stream": False,
             "format": "json",
             "think": False,
+            "keep_alive": 300,
         },
         "timeout": 5.0,
     }
+    assert response.usage.total_duration_ns == 2_000_000_000
+    assert response.usage.generation_tokens_per_second == 20.0
+
+
+def test_client_aggregates_privacy_safe_usage_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_urlopen(request: Any, timeout: float) -> FakeHttpResponse:
+        return FakeHttpResponse(
+            {
+                "response": '{"translations":[]}',
+                "total_duration": 10,
+                "load_duration": 2,
+                "prompt_eval_count": 3,
+                "prompt_eval_duration": 4,
+                "eval_count": 5,
+                "eval_duration": 6,
+            }
+        )
+
+    monkeypatch.setattr("locaforge.infrastructure.llm.ollama_client.urlopen", fake_urlopen)
+    client = OllamaClient()
+
+    client.translate(make_request())
+    client.translate(make_request())
+
+    snapshot = client.performance_snapshot()
+    assert snapshot.request_count == 2
+    assert snapshot.total_duration_ns == 20
+    assert snapshot.load_duration_ns == 4
+    assert snapshot.prompt_eval_count == 6
+    assert snapshot.eval_count == 10
+    assert snapshot.eval_duration_ns == 12
 
 
 def test_translate_rejects_non_json_model_output(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -20,6 +20,11 @@ class Repository:
     def get_entry(self, _project_id: str, _entry_id: str) -> TranslationEntry:
         return self.entry
 
+    def get_entries(
+        self, _project_id: str, entry_ids: Sequence[str]
+    ) -> tuple[TranslationEntry, ...]:
+        return tuple(self.entry for _entry_id in entry_ids)
+
     def list_validation_issues(
         self, _project_id: str
     ) -> tuple[EntryValidationIssue, ...]:

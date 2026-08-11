@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
+from threading import Lock
 from typing import cast
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+from locaforge.application.dto.model_performance import (
+    ModelPerformanceSnapshot,
+    ModelUsageMetrics,
+)
 from locaforge.application.dto.project_description import (
     ProjectDescriptionRequest,
     ProjectDescriptionResponse,
@@ -24,12 +30,21 @@ from locaforge.application.errors import (
 )
 from locaforge.domain.project_profile import ProjectProfile
 
+logger = logging.getLogger(__name__)
+
 
 class OllamaClient:
     """Calls a local Ollama server using its `/api/generate` endpoint."""
 
     def __init__(self, base_url: str = "http://127.0.0.1:11434") -> None:
         self._base_url = base_url.rstrip("/")
+        self._performance = ModelPerformanceSnapshot()
+        self._performance_lock = Lock()
+
+    def performance_snapshot(self) -> ModelPerformanceSnapshot:
+        """Return privacy-safe aggregate timings collected by this client."""
+        with self._performance_lock:
+            return self._performance
 
     def health_check(self) -> bool:
         try:
@@ -82,9 +97,16 @@ class OllamaClient:
             )
         response = self._request_json(
             "/api/generate",
-            {"model": request.model, "prompt": prompt, "stream": False, "format": "json"},
+            {
+                "model": request.model,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",
+                "keep_alive": request.keep_alive_seconds,
+            },
             request.timeout_seconds,
         )
+        usage = self._record_usage(response)
         raw_response = response.get("response")
         if not isinstance(raw_response, str):
             raise InvalidModelResponseError("Ollama response does not contain project data")
@@ -97,7 +119,7 @@ class OllamaClient:
         profile = ProjectProfile.from_mapping(body)
         if not profile.description:
             raise InvalidModelResponseError("Project description is missing")
-        return ProjectDescriptionResponse(profile)
+        return ProjectDescriptionResponse(profile, usage)
 
     def translate(self, request: TranslationRequest) -> TranslationResponse:
         payload = {
@@ -106,8 +128,10 @@ class OllamaClient:
             "stream": False,
             "format": "json",
             "think": False if request.reasoning == "off" else request.reasoning,
+            "keep_alive": request.keep_alive_seconds,
         }
         response = self._request_json("/api/generate", payload, request.timeout_seconds)
+        usage = self._record_usage(response)
         raw_response = response.get("response")
         if not isinstance(raw_response, str):
             raise InvalidModelResponseError("Ollama response does not contain a text response")
@@ -133,7 +157,7 @@ class OllamaClient:
                     "Each translation item requires string entry_id and translation fields"
                 )
             results.append(TranslationResult(entry_id=entry_id, translation=translation))
-        return TranslationResponse(results=tuple(results))
+        return TranslationResponse(results=tuple(results), usage=usage)
 
     def review(self, request: ReviewRequest) -> ReviewResponse:
         review_instructions = request.prompt.strip() or "Report clear translation errors."
@@ -163,9 +187,11 @@ class OllamaClient:
                 "stream": False,
                 "format": "json",
                 "think": False if request.reasoning == "off" else request.reasoning,
+                "keep_alive": request.keep_alive_seconds,
             },
             request.timeout_seconds,
         )
+        usage = self._record_usage(response)
         raw_response = response.get("response")
         if not isinstance(raw_response, str):
             raise InvalidModelResponseError("Ollama response does not contain review data")
@@ -193,7 +219,48 @@ class OllamaClient:
             results.append(
                 ReviewResult(item["entry_id"], issue, suggested_translation)
             )
-        return ReviewResponse(tuple(results))
+        return ReviewResponse(tuple(results), usage)
+
+    def _record_usage(self, response: dict[str, object]) -> ModelUsageMetrics:
+        usage = ModelUsageMetrics(
+            total_duration_ns=self._non_negative_int(response.get("total_duration")),
+            load_duration_ns=self._non_negative_int(response.get("load_duration")),
+            prompt_eval_count=self._non_negative_int(response.get("prompt_eval_count")),
+            prompt_eval_duration_ns=self._non_negative_int(
+                response.get("prompt_eval_duration")
+            ),
+            eval_count=self._non_negative_int(response.get("eval_count")),
+            eval_duration_ns=self._non_negative_int(response.get("eval_duration")),
+        )
+        with self._performance_lock:
+            previous = self._performance
+            self._performance = ModelPerformanceSnapshot(
+                request_count=previous.request_count + 1,
+                total_duration_ns=previous.total_duration_ns + usage.total_duration_ns,
+                load_duration_ns=previous.load_duration_ns + usage.load_duration_ns,
+                prompt_eval_count=previous.prompt_eval_count + usage.prompt_eval_count,
+                prompt_eval_duration_ns=(
+                    previous.prompt_eval_duration_ns + usage.prompt_eval_duration_ns
+                ),
+                eval_count=previous.eval_count + usage.eval_count,
+                eval_duration_ns=previous.eval_duration_ns + usage.eval_duration_ns,
+            )
+        logger.info(
+            "Ollama request metrics: total_ms=%.1f load_ms=%.1f prompt_tokens=%d "
+            "generated_tokens=%d generation_tokens_per_second=%.2f",
+            usage.total_duration_ns / 1_000_000,
+            usage.load_duration_ns / 1_000_000,
+            usage.prompt_eval_count,
+            usage.eval_count,
+            usage.generation_tokens_per_second,
+        )
+        return usage
+
+    @staticmethod
+    def _non_negative_int(value: object) -> int:
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+        return 0
 
     def _request_json(
         self, endpoint: str, payload: dict[str, object] | None, timeout_seconds: float

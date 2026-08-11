@@ -249,6 +249,19 @@ class ApplicationSettingsDialog(QDialog):
         self.batch_size = QSpinBox(self)
         self.batch_size.setRange(1, 1000)
         self.batch_size.setValue(settings.model_settings.batch_size)
+        self.keep_alive = QSpinBox(self)
+        self.keep_alive.setRange(-1, 86_400)
+        self.keep_alive.setSpecialValueText(
+            self._message("settings.keep_alive_forever", "Keep loaded")
+        )
+        self.keep_alive.setSuffix(" s")
+        self.keep_alive.setValue(settings.model_settings.keep_alive_seconds)
+        self.keep_alive.setToolTip(
+            self._message(
+                "settings.keep_alive_help",
+                "How long Ollama keeps the model in memory; -1 keeps it loaded, 0 unloads it",
+            )
+        )
         self.translation_prompt = QPlainTextEdit(settings.model_settings.system_prompt, self)
         self.review_prompt = QPlainTextEdit(settings.model_settings.review_prompt, self)
         self._add_page(
@@ -276,6 +289,10 @@ class ApplicationSettingsDialog(QDialog):
                 ),
                 (self._message("settings.timeout", "Timeout"), self.timeout),
                 (self._message("settings.batch_size", "Batch size"), self.batch_size),
+                (
+                    self._message("settings.keep_alive", "Keep model loaded"),
+                    self.keep_alive,
+                ),
                 (
                     self._message("settings.translation_prompt", "Translation prompt"),
                     self.translation_prompt,
@@ -330,6 +347,7 @@ class ApplicationSettingsDialog(QDialog):
             batch_size=self.batch_size.value(),
             system_prompt=self.translation_prompt.toPlainText(),
             review_prompt=self.review_prompt.toPlainText(),
+            keep_alive_seconds=self.keep_alive.value(),
         )
 
     def set_model_pull_running(self, running: bool, message: str = "") -> None:

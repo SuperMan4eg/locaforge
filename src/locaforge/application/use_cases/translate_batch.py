@@ -29,6 +29,7 @@ from locaforge.application.services.retry_policy import BatchRetryPolicy
 from locaforge.application.services.translation_validator import TranslationValidator
 from locaforge.domain.entry import EntryStatus, TranslationEntry
 from locaforge.domain.glossary import GlossaryTerm
+from locaforge.domain.project import Project
 
 type CancellationCheck = Callable[[], bool]
 
@@ -69,8 +70,12 @@ class TranslateBatch:
         system_prompt: str = "",
         cancellation_check: CancellationCheck | None = None,
         reasoning: str = "off",
+        project: Project | None = None,
+        keep_alive_seconds: int = 300,
     ) -> BatchResult:
-        project = self._project_repository.get(project_id)
+        project = project or self._project_repository.get(project_id)
+        if project.id != project_id:
+            raise ValueError("The supplied project does not match the requested project id")
         system_prompt = ProjectContextBuilder().combine_with_prompt(project, system_prompt)
         selected_entries = [project.get_entry(entry_id) for entry_id in entry_ids]
         eligible_entries, skipped_entry_ids = self._split_eligible_entries(selected_entries)
@@ -108,6 +113,7 @@ class TranslateBatch:
             errors=errors,
             cancellation_check=cancellation_check or _never_cancel,
             reasoning=reasoning,
+            keep_alive_seconds=keep_alive_seconds,
         )
         self._apply_duplicate_translations(
             project_id,
@@ -139,6 +145,7 @@ class TranslateBatch:
         errors: list[str],
         cancellation_check: CancellationCheck,
         reasoning: str,
+        keep_alive_seconds: int,
     ) -> bool:
         pending_entries = list(entries)
         failure_reasons: dict[str, str] = {}
@@ -157,6 +164,7 @@ class TranslateBatch:
                     model,
                     timeout_seconds,
                     reasoning,
+                    keep_alive_seconds,
                 )
             except (ModelUnavailableError, ModelTimeoutError, InvalidModelResponseError) as error:
                 failure_reasons = {entry.id: str(error) for entry in pending_entries}
@@ -189,6 +197,7 @@ class TranslateBatch:
                     errors,
                     cancellation_check,
                     reasoning,
+                    keep_alive_seconds,
                 )
                 if cancelled:
                     return True
@@ -222,6 +231,7 @@ class TranslateBatch:
         model: str,
         timeout_seconds: float,
         reasoning: str,
+        keep_alive_seconds: int,
     ) -> TranslationResponse:
         request_items = tuple(
             TranslationRequestItem(
@@ -245,6 +255,7 @@ class TranslateBatch:
             ),
             timeout_seconds=timeout_seconds,
             reasoning=reasoning,
+            keep_alive_seconds=keep_alive_seconds,
         )
         return self._llm_client.translate(request)
 

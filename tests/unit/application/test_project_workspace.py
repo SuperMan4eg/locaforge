@@ -843,6 +843,7 @@ def test_workspace_persists_settings_and_applies_batch_size_and_prompt(tmp_path:
         timeout_seconds=45.0,
         batch_size=2,
         system_prompt="Use a concise UI style.",
+        keep_alive_seconds=-1,
     )
 
     workspace.update_model_settings(settings)
@@ -853,6 +854,7 @@ def test_workspace_persists_settings_and_applies_batch_size_and_prompt(tmp_path:
     assert len(llm_client.requests) == 2
     assert all(request.model == "model-b" for request in llm_client.requests)
     assert all(request.timeout_seconds == 45.0 for request in llm_client.requests)
+    assert all(request.keep_alive_seconds == -1 for request in llm_client.requests)
     assert llm_client.requests[0].prompt.startswith("Use a concise UI style.")
     assert len(result.translated_entry_ids) == 3
 

@@ -16,12 +16,13 @@ REASONING_MODES = ("off", "low", "medium", "high")
 class ModelSettings:
     model: str = "qwen3"
     timeout_seconds: float = 120.0
-    batch_size: int = 20
+    batch_size: int = 5
     system_prompt: str = ""
     review_prompt: str = DEFAULT_REVIEW_PROMPT
     review_model: str = ""
     translation_reasoning: str = "off"
     review_reasoning: str = "off"
+    keep_alive_seconds: int = 300
 
     def __post_init__(self) -> None:
         if not self.model.strip():
@@ -30,6 +31,8 @@ class ModelSettings:
             raise ValueError("Model timeout must be positive")
         if self.batch_size < 1:
             raise ValueError("Batch size must be positive")
+        if self.keep_alive_seconds < -1:
+            raise ValueError("Model keep-alive must be -1 or a non-negative number of seconds")
         if self.review_model and not self.review_model.strip():
             raise ValueError("Reviewer model name must not be blank")
         if self.translation_reasoning not in REASONING_MODES:
@@ -51,6 +54,7 @@ class ModelSettings:
             "review_model": self.review_model,
             "translation_reasoning": self.translation_reasoning,
             "review_reasoning": self.review_reasoning,
+            "keep_alive_seconds": self.keep_alive_seconds,
         }
 
     @classmethod
@@ -64,6 +68,7 @@ class ModelSettings:
         review_model = values.get("review_model")
         translation_reasoning = values.get("translation_reasoning")
         review_reasoning = values.get("review_reasoning")
+        keep_alive_seconds = values.get("keep_alive_seconds")
         return cls(
             model=model if isinstance(model, str) else defaults.model,
             timeout_seconds=(
@@ -96,5 +101,12 @@ class ModelSettings:
                 review_reasoning
                 if isinstance(review_reasoning, str) and review_reasoning in REASONING_MODES
                 else defaults.review_reasoning
+            ),
+            keep_alive_seconds=(
+                keep_alive_seconds
+                if isinstance(keep_alive_seconds, int)
+                and not isinstance(keep_alive_seconds, bool)
+                and keep_alive_seconds >= -1
+                else defaults.keep_alive_seconds
             ),
         )

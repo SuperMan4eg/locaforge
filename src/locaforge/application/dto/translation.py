@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from locaforge.application.dto.model_performance import ModelUsageMetrics
+
 
 @dataclass(frozen=True, slots=True)
 class TranslationRequestItem:
@@ -21,6 +23,7 @@ class TranslationRequest:
     prompt: str
     timeout_seconds: float
     reasoning: str = "off"
+    keep_alive_seconds: int = 300
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +35,7 @@ class TranslationResult:
 @dataclass(frozen=True, slots=True)
 class TranslationResponse:
     results: tuple[TranslationResult, ...]
+    usage: ModelUsageMetrics = ModelUsageMetrics()
 
 
 @dataclass(frozen=True, slots=True)

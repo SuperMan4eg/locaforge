@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from typing import Any, cast
 
+from locaforge.application.dto.model_performance import ModelPerformanceSnapshot
 from locaforge.presentation.application_settings import ApplicationSettings
 from locaforge.presentation.project_information_controller import (
     ProjectInformationController,
@@ -24,6 +25,17 @@ class WorkspaceStub:
             dirty=True,
         )
         self.session = SimpleNamespace(metadata={"format_version": format_version})
+
+    @staticmethod
+    def model_performance_snapshot() -> ModelPerformanceSnapshot:
+        return ModelPerformanceSnapshot(
+            request_count=2,
+            total_duration_ns=3_000_000_000,
+            load_duration_ns=500_000_000,
+            prompt_eval_count=100,
+            eval_count=50,
+            eval_duration_ns=2_000_000_000,
+        )
 
 
 def make_controller(
@@ -96,6 +108,9 @@ def test_diagnostics_include_safe_project_and_application_metadata() -> None:
     assert "entry_count: 3" in report
     assert "source_formats: json,po" in report
     assert "project_dirty: true" in report
+    assert "model_request_count: 2" in report
+    assert "model_load_seconds: 0.500" in report
+    assert "model_generation_tokens_per_second: 25.00" in report
     assert notifications == [True]
 
 

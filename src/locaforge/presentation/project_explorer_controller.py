@@ -44,6 +44,12 @@ class ProjectExplorerController(QObject):
 
     def refresh(self) -> None:
         selected_ids = self.selected_document_ids()
+        list_scroll = self._view.verticalScrollBar().value()
+        tree_scroll = (
+            self._file_tree.verticalScrollBar().value()
+            if self._file_tree is not None
+            else None
+        )
         self._view.blockSignals(True)
         self._view.clear()
         if self._file_tree is not None:
@@ -81,23 +87,28 @@ class ProjectExplorerController(QObject):
         self._add_information(f"Files ({len(project.documents)}):")
         if not project.documents:
             self._add_information("No files yet — use File > Add files to project")
+        progress_by_document = self._document_progress(project.entries)
         for document in project.documents:
-            entries = [entry for entry in project.entries if entry.document_id == document.id]
-            translated = sum(entry.translation is not None for entry in entries)
             if self._file_tree is None:
+                total, translated = progress_by_document.get(document.id, (0, 0))
                 source_path = getattr(document, "source_path", document.name)
                 item = QListWidgetItem(
                     f"  {source_path} [{document.source_format.upper()}] — "
-                    f"{translated}/{len(entries)} translated"
+                    f"{translated}/{total} translated"
                 )
                 item.setData(Qt.ItemDataRole.UserRole, document.id)
                 item.setToolTip(source_path)
                 self._view.addItem(item)
                 item.setSelected(document.id in selected_ids)
         if self._file_tree is not None:
-            self._populate_file_tree(project.documents, project.entries, selected_ids)
+            self._populate_file_tree(
+                project.documents, progress_by_document, selected_ids
+            )
             self._file_tree.blockSignals(False)
+            if tree_scroll is not None:
+                self._file_tree.verticalScrollBar().setValue(tree_scroll)
         self._view.blockSignals(False)
+        self._view.verticalScrollBar().setValue(list_scroll)
 
     def selected_document_ids(self) -> frozenset[str]:
         selected: set[str] = set()
@@ -177,7 +188,7 @@ class ProjectExplorerController(QObject):
     def _populate_file_tree(
         self,
         documents: Collection[ProjectDocument],
-        entries: Collection[TranslationEntry],
+        progress_by_document: dict[str, tuple[int, int]],
         selected_ids: Collection[str],
     ) -> None:
         if self._file_tree is None:
@@ -199,14 +210,13 @@ class ProjectExplorerController(QObject):
                         self._file_tree.addTopLevelItem(folder)
                     folders[key] = folder
                 parent = folders[key]
-            document_entries = [entry for entry in entries if entry.document_id == document.id]
-            translated = sum(entry.translation is not None for entry in document_entries)
-            percent = round(translated * 100 / len(document_entries)) if document_entries else 0
+            total, translated = progress_by_document.get(document.id, (0, 0))
+            percent = round(translated * 100 / total) if total else 0
             item = QTreeWidgetItem(
                 (
                     parts[-1],
                     document.source_format.upper(),
-                    f"{translated}/{len(document_entries)} ({percent}%)",
+                    f"{translated}/{total} ({percent}%)",
                 )
             )
             item.setData(0, Qt.ItemDataRole.UserRole, document.id)
@@ -220,6 +230,22 @@ class ProjectExplorerController(QObject):
             item.setData(0, Qt.ItemDataRole.UserRole, folder_documents[key])
             item.setExpanded(True)
         self.set_file_filter(self._file_filter)
+
+    @staticmethod
+    def _document_progress(
+        entries: Collection[TranslationEntry],
+    ) -> dict[str, tuple[int, int]]:
+        progress: dict[str, tuple[int, int]] = {}
+        for entry in entries:
+            document_id = entry.document_id
+            if document_id is None:
+                continue
+            total, translated = progress.get(document_id, (0, 0))
+            progress[document_id] = (
+                total + 1,
+                translated + (entry.translation is not None),
+            )
+        return progress
 
     def _filter_tree_item(self, item: QTreeWidgetItem) -> tuple[str, ...]:
         value = item.data(0, Qt.ItemDataRole.UserRole)

@@ -6,6 +6,33 @@ All notable changes to LocaForge are documented in this file.
 
 ## Unreleased
 
+## 0.5.0 — 2026-08-11
+
+- Added a reproducible performance baseline for 1,000-, 10,000-, and 50,000-entry projects,
+  including JSON/Markdown reports, cold UI startup, project workflows, persistence, translation
+  memory, and optional Ollama timing and token metrics.
+- Indexed project and table entries by ID, cached normalized table-search text, and grouped
+  per-document progress in one pass so large-project filtering and explorer refreshes avoid
+  repeated linear scans while preserving selection and scroll position.
+- Manual saves now update only the persisted clean/dirty state before packaging the working
+  database, avoiding a full entry rewrite while restoring dirty state if container creation fails;
+  legacy containers still receive their required one-time structural migration.
+- Added ordered batch entry reads, set-based Undo/Redo state and validation checks, targeted SQLite
+  indexes, and reuse of the open project during AI batches to remove per-entry queries and repeated
+  whole-project reloads.
+- Glossary terms and compiled matchers are now cached by language pair and invalidated on changes;
+  full-project validation resolves terminology for all translated sources in one batch.
+- Translation-memory fuzzy search now narrows candidates through a migrated, indexed source-length
+  column and uses RapidFuzz for native scoring, cutting the 10,000-record benchmark median from
+  5.23 ms to 2.30 ms while retaining the existing threshold and context-aware ranking.
+- Ollama requests now retain privacy-safe load, prompt, generation, and token metrics for support
+  diagnostics; configurable model keep-alive is shared by translation, review, and profile
+  generation, and the benchmark compares valid batch throughput for multiple sizes. A measured
+  `gemma4:12b` run selected 5 as the new-profile default without changing explicitly saved values.
+- Added reproducible CPython JIT, Cython, and Nuitka experiments. Current measurements retain the
+  default CPython/PyInstaller release path: JIT and Cython were neutral, while Nuitka's 9.3% faster
+  startup did not meet the 15% adoption threshold and its Python 3.14 support remains experimental.
+
 ## 0.4.3 — 2026-08-11
 
 - Split tests into fast unit, parallel integration, and sequential GUI layers, with slow-test

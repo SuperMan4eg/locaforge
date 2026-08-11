@@ -27,3 +27,10 @@ class GlossaryStore(Protocol):
         target_language: str,
         sources: Sequence[str],
     ) -> tuple[GlossaryTerm, ...]: ...
+
+    def find_for_sources_batch(
+        self,
+        source_language: str,
+        target_language: str,
+        sources: Sequence[str],
+    ) -> tuple[tuple[GlossaryTerm, ...], ...]: ...

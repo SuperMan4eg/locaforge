@@ -27,4 +27,8 @@ class OpenProjectFile:
                 Path(source_file if isinstance(source_file, str) else project.name),
                 source_format if isinstance(source_format, str) else "legacy",
             )
+            # Persist the synthesized document exactly once while migrating a legacy
+            # working copy. Normal saves only need to update the dirty flag because
+            # all current project mutations are already written incrementally.
+            repository.save(project)
         return OpenedProject(project=project, session=session)

@@ -26,6 +26,12 @@ class Project:
     dirty: bool = False
     documents: list[ProjectDocument] = field(default_factory=list)
     profile: ProjectProfile = field(default_factory=ProjectProfile)
+    _entry_index: dict[str, tuple[int, TranslationEntry]] = field(
+        init=False,
+        repr=False,
+        compare=False,
+        default_factory=dict,
+    )
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -55,6 +61,7 @@ class Project:
         self.source_document = (
             self.documents[0].source_document if self.documents else None
         )
+        self._rebuild_entry_index()
 
     def configure_single_document(
         self,
@@ -83,8 +90,13 @@ class Project:
         raise KeyError(f"Document {document_id!r} was not found")
 
     def add_entry(self, entry: TranslationEntry) -> None:
-        if any(existing.id == entry.id for existing in self.entries):
+        indexed = self._entry_index.get(entry.id)
+        if self._entry_index_is_current(entry.id, indexed):
             raise ValueError(f"An entry with id {entry.id!r} already exists")
+        if len(self._entry_index) != len(self.entries) or indexed is not None:
+            self._rebuild_entry_index()
+            if entry.id in self._entry_index:
+                raise ValueError(f"An entry with id {entry.id!r} already exists")
         if not self.documents:
             self.documents.append(
                 ProjectDocument(
@@ -99,14 +111,41 @@ class Project:
             entry.document_id = self.documents[0].id
         elif not any(document.id == entry.document_id for document in self.documents):
             raise ValueError(f"Entry {entry.id!r} belongs to an unknown document")
+        row = len(self.entries)
         self.entries.append(entry)
+        self._entry_index[entry.id] = (row, entry)
         self.dirty = True
 
     def get_entry(self, entry_id: str) -> TranslationEntry:
-        for entry in self.entries:
-            if entry.id == entry_id:
-                return entry
-        raise KeyError(f"Entry {entry_id!r} was not found")
+        indexed = self._entry_index.get(entry_id)
+        if not self._entry_index_is_current(entry_id, indexed):
+            self._rebuild_entry_index()
+            indexed = self._entry_index.get(entry_id)
+        if indexed is None:
+            raise KeyError(f"Entry {entry_id!r} was not found")
+        return indexed[1]
+
+    def _entry_index_is_current(
+        self,
+        entry_id: str,
+        indexed: tuple[int, TranslationEntry] | None,
+    ) -> bool:
+        if len(self._entry_index) != len(self.entries) or indexed is None:
+            return False
+        row, entry = indexed
+        return (
+            row < len(self.entries)
+            and self.entries[row] is entry
+            and entry.id == entry_id
+        )
+
+    def _rebuild_entry_index(self) -> None:
+        index: dict[str, tuple[int, TranslationEntry]] = {}
+        for row, entry in enumerate(self.entries):
+            if entry.id in index:
+                raise ValueError(f"Duplicate project entry id: {entry.id!r}")
+            index[entry.id] = (row, entry)
+        self._entry_index = index
 
     def set_entry_translation(self, entry_id: str, translation: str | None) -> TranslationEntry:
         entry = self.get_entry(entry_id)

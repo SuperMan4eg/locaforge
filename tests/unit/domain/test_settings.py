@@ -10,6 +10,8 @@ def test_model_settings_validate_runtime_limits() -> None:
         ModelSettings(timeout_seconds=0)
     with pytest.raises(ValueError, match="Batch size"):
         ModelSettings(batch_size=0)
+    with pytest.raises(ValueError, match="keep-alive"):
+        ModelSettings(keep_alive_seconds=-2)
 
 
 def test_model_settings_round_trip_mapping() -> None:
@@ -43,3 +45,10 @@ def test_model_settings_store_separate_reasoning_modes() -> None:
     assert ModelSettings.from_mapping(settings.to_dict()) == settings
     with pytest.raises(ValueError, match="translation reasoning"):
         ModelSettings(translation_reasoning="maximum")
+
+
+def test_model_settings_store_ollama_keep_alive() -> None:
+    settings = ModelSettings(keep_alive_seconds=-1)
+
+    assert ModelSettings.from_mapping(settings.to_dict()) == settings
+    assert ModelSettings.from_mapping({"keep_alive_seconds": -2}).keep_alive_seconds == 300

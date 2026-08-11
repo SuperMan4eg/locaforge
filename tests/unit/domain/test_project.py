@@ -22,6 +22,59 @@ def test_duplicate_entry_id_is_rejected() -> None:
         project.add_entry(TranslationEntry("entry-1", ("second",), "Goodbye"))
 
 
+def test_duplicate_entry_ids_are_rejected_during_project_creation() -> None:
+    with pytest.raises(ValueError, match="Duplicate project entry id"):
+        Project(
+            "project-1",
+            "Dialog",
+            "en",
+            "ru",
+            entries=[
+                TranslationEntry("entry-1", ("first",), "Hello"),
+                TranslationEntry("entry-1", ("second",), "Goodbye"),
+            ],
+        )
+
+
+def test_entry_index_recovers_after_direct_list_mutations() -> None:
+    first = TranslationEntry("entry-1", ("first",), "Hello")
+    project = Project("project-1", "Dialog", "en", "ru", entries=[first])
+    replacement = TranslationEntry("entry-2", ("second",), "Goodbye")
+
+    project.entries[0] = replacement
+
+    assert project.get_entry("entry-2") is replacement
+    with pytest.raises(KeyError, match="entry-1"):
+        project.get_entry("entry-1")
+
+
+def test_entry_index_recovers_after_direct_append() -> None:
+    project = Project("project-1", "Dialog", "en", "ru")
+    appended = TranslationEntry("entry-1", ("first",), "Hello")
+
+    project.entries.append(appended)
+
+    assert project.get_entry("entry-1") is appended
+
+
+def test_entry_index_recovers_after_direct_removal() -> None:
+    removed = TranslationEntry("entry-1", ("first",), "Hello")
+    remaining = TranslationEntry("entry-2", ("second",), "Goodbye")
+    project = Project(
+        "project-1",
+        "Dialog",
+        "en",
+        "ru",
+        entries=[removed, remaining],
+    )
+
+    project.entries.remove(removed)
+
+    assert project.get_entry("entry-2") is remaining
+    with pytest.raises(KeyError, match="entry-1"):
+        project.get_entry("entry-1")
+
+
 def test_legacy_project_creates_a_default_document_and_assigns_entries() -> None:
     entry = TranslationEntry("entry-1", ("hello",), "Hello")
     project = Project(

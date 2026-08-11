@@ -53,10 +53,11 @@ class TranslationReviewService:
         if self._llm_client is None:
             raise ModelUnavailableError("No LLM backend is configured")
         reviewer = ReviewTranslations(repository, self._llm_client)
+        selected_ids = tuple(dict.fromkeys(entry_ids))
         reviewable_ids = {
-            entry_id
-            for entry_id in entry_ids
-            if repository.get_entry(project.id, entry_id).translation is not None
+            entry.id
+            for entry in repository.get_entries(project.id, selected_ids)
+            if entry.translation is not None
         }
         history = ProjectHistoryService()
         previous_entries, previous_issues = history.snapshot(
@@ -81,6 +82,8 @@ class TranslationReviewService:
                 settings.timeout_seconds,
                 settings.review_prompt,
                 settings.review_reasoning,
+                project=project,
+                keep_alive_seconds=settings.keep_alive_seconds,
             )
             changed_entry_ids.extend(
                 entry_id for entry_id in batch_entry_ids if entry_id in reviewable_ids
