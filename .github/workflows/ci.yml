@@ -20,7 +20,8 @@ jobs:
         run: python scripts/check_docs.py
 
   static-quality:
-    name: Static quality (Python ${{ matrix.python-version }})
+    # Keep this check name stable: main branch protection requires it.
+    name: Quality (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
