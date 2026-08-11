@@ -24,6 +24,9 @@ class LfprojContainer:
     _FORMAT_VERSION = 2
     _SUPPORTED_FORMAT_VERSIONS = frozenset({1, 2})
     _BACKUP_GENERATIONS = 3
+    # sqlite3_backup_step holds a read lock for each batch. Keeping autosave
+    # batches small lets foreground edits acquire the database between steps.
+    _SNAPSHOT_PAGES_PER_STEP = 128
 
     def __init__(self, working_root: Path) -> None:
         self._working_root = working_root
@@ -83,7 +86,7 @@ class LfprojContainer:
             source = sqlite3.connect(session.database_path)
             snapshot = sqlite3.connect(snapshot_path)
             try:
-                source.backup(snapshot)
+                source.backup(snapshot, pages=self._SNAPSHOT_PAGES_PER_STEP)
             finally:
                 snapshot.close()
                 source.close()

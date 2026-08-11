@@ -12,9 +12,14 @@ class Repository:
         self.project = project
         self.marked_dirty: list[str] = []
         self.marked_saved: list[str] = []
+        self.get_calls: list[str] = []
 
-    def get(self, _project_id: str) -> Project:
+    def get(self, project_id: str) -> Project:
+        self.get_calls.append(project_id)
         return self.project
+
+    def is_project_dirty(self, _project_id: str) -> bool:
+        return self.project.dirty
 
     def mark_project_dirty(self, project_id: str) -> None:
         self.marked_dirty.append(project_id)
@@ -111,3 +116,18 @@ def test_autosave_rejects_unsaved_project_before_repository_change(
 
     assert repository.marked_saved == []
     assert container.snapshots == []
+
+
+def test_refresh_after_autosave_reads_only_the_dirty_flag(tmp_path: Path) -> None:
+    project = Project("p", "Demo", "en", "ru", dirty=True)
+    persisted_project = Project("p", "Demo", "en", "ru", dirty=False)
+    repository = Repository(persisted_project)
+    container = Container(
+        ProjectSession(tmp_path / "work", tmp_path / "project.db", {})
+    )
+    service = make_service(container, repository)
+
+    service.refresh_dirty_state(repository, project)  # type: ignore[arg-type]
+
+    assert project.dirty is False
+    assert repository.get_calls == []

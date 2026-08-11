@@ -103,3 +103,20 @@ def test_clear_resets_pending_selection_and_button() -> None:
     assert suggestions.count() == 0
     assert controller.suggestion is None
     assert apply_button.isEnabled() is False
+
+
+def test_reload_current_discards_cached_matches_and_schedules_fresh_lookup() -> None:
+    application = QApplication.instance() or QApplication([])
+    controller, suggestions, apply_button, _, parent = make_controller()
+    controller.refresh("entry-one")
+    controller._matches_loaded("entry-one", 1, (match(),))
+
+    controller.reload_current()
+
+    assert application is not None
+    assert parent is not None
+    assert suggestions.count() == 0
+    assert controller.suggestion is None
+    assert apply_button.isEnabled() is False
+    assert controller._pending_entry_id == "entry-one"
+    assert controller._timer.isActive() is True
