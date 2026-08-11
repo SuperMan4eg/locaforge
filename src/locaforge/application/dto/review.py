@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from locaforge.application.dto.model_performance import ModelUsageMetrics
+
 
 @dataclass(frozen=True, slots=True)
 class ReviewRequestItem:
@@ -19,6 +21,7 @@ class ReviewRequest:
     timeout_seconds: float
     prompt: str = ""
     reasoning: str = "off"
+    keep_alive_seconds: int = 300
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +34,7 @@ class ReviewResult:
 @dataclass(frozen=True, slots=True)
 class ReviewResponse:
     results: tuple[ReviewResult, ...]
+    usage: ModelUsageMetrics = ModelUsageMetrics()
 
 
 @dataclass(frozen=True, slots=True)

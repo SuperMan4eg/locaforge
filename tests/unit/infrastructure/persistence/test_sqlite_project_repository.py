@@ -117,6 +117,51 @@ def test_missing_objects_have_specific_errors(tmp_path: Path) -> None:
         repository.get_entry("missing", "entry-1")
 
 
+def test_get_entries_preserves_requested_order_and_duplicates(tmp_path: Path) -> None:
+    repository = SQLiteProjectRepository(tmp_path / "project.db")
+    project = make_project()
+    project.add_entry(TranslationEntry("entry-2", ("dialog", 1), "Bye"))
+    repository.create(project)
+
+    entries = repository.get_entries(
+        project.id, ("entry-2", "entry-1", "entry-2")
+    )
+
+    assert [entry.id for entry in entries] == ["entry-2", "entry-1", "entry-2"]
+
+
+def test_get_entries_reports_all_missing_ids(tmp_path: Path) -> None:
+    repository = SQLiteProjectRepository(tmp_path / "project.db")
+    project = make_project()
+    repository.create(project)
+
+    with pytest.raises(EntryNotFoundError, match="missing-1.*missing-2"):
+        repository.get_entries(project.id, ("missing-1", "entry-1", "missing-2"))
+
+
+def test_document_lookup_uses_composite_index(tmp_path: Path) -> None:
+    database_path = tmp_path / "project.db"
+    repository = SQLiteProjectRepository(database_path)
+    project = make_project()
+    repository.create(project)
+
+    with sqlite3.connect(database_path) as connection:
+        plan = connection.execute(
+            "EXPLAIN QUERY PLAN SELECT id FROM entries "
+            "WHERE project_id = ? AND document_id = ?",
+            (project.id, project.documents[0].id),
+        ).fetchall()
+        operation_indexes = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA index_list(translation_operation_entries)"
+            ).fetchall()
+        }
+
+    assert any("entries_document_lookup" in str(row[3]) for row in plan)
+    assert "translation_operation_entries_entry_lookup" in operation_indexes
+
+
 def test_validation_issues_are_replaced_and_listed(tmp_path: Path) -> None:
     repository = SQLiteProjectRepository(tmp_path / "project.db")
     project = make_project()

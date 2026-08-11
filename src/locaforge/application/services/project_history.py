@@ -29,9 +29,7 @@ class ProjectHistoryService:
         entry_ids: Sequence[str],
     ) -> OperationSnapshot:
         selected_ids = tuple(dict.fromkeys(entry_ids))
-        entries = tuple(
-            repository.get_entry(project_id, entry_id) for entry_id in selected_ids
-        )
+        entries = repository.get_entries(project_id, selected_ids)
         selected = set(selected_ids)
         issues: dict[str, list[ValidationIssue]] = {
             entry_id: [] for entry_id in selected_ids

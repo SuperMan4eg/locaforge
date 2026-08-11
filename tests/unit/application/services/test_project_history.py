@@ -34,6 +34,12 @@ class FakeHistoryRepository:
         assert project_id == "project-1"
         return self.entries[entry_id]
 
+    def get_entries(
+        self, project_id: str, entry_ids: Sequence[str]
+    ) -> tuple[TranslationEntry, ...]:
+        assert project_id == "project-1"
+        return tuple(self.entries[entry_id] for entry_id in entry_ids)
+
     def list_validation_issues(
         self, project_id: str
     ) -> tuple[EntryValidationIssue, ...]:

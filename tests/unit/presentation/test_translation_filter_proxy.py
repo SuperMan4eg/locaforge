@@ -129,3 +129,27 @@ def test_proxy_sorts_statuses_by_translation_workflow() -> None:
     assert application is not None
     assert proxy.data(proxy.index(0, 3)) == "Untranslated"
     assert proxy.data(proxy.index(1, 3)) == "Translated"
+
+
+def test_proxy_uses_refreshed_search_cache_after_entry_update() -> None:
+    application = QApplication.instance() or QApplication([])
+    proxy = make_proxy()
+    source = proxy.sourceModel()
+    assert isinstance(source, TranslationTableModel)
+    proxy.set_search_field("translation")
+    proxy.set_search_text("сохранить")
+    assert proxy.rowCount() == 0
+
+    source.update_entry(
+        TranslationEntry(
+            "one",
+            ("dialog", "hello"),
+            "Hello",
+            translation="Сохранить",
+            status=EntryStatus.TRANSLATED,
+        )
+    )
+
+    assert application is not None
+    assert proxy.rowCount() == 1
+    assert proxy.data(proxy.index(0, 2)) == "Сохранить"

@@ -16,6 +16,7 @@ from locaforge.application.services.glossary_validator import GlossaryValidator
 from locaforge.application.services.placeholder_protector import PlaceholderProtector
 from locaforge.application.services.translation_validator import TranslationValidator
 from locaforge.domain.entry import EntryStatus, TranslationEntry
+from locaforge.domain.glossary import GlossaryTerm
 from locaforge.domain.project import Project
 
 
@@ -40,16 +41,18 @@ class ValidateProject:
         project = self._project_repository.get(project_id)
         existing_issues = self._existing_issues(project_id)
         consistency_issues = self._consistency_validator.validate(project.entries)
+        translated_entries = tuple(
+            entry for entry in project.entries if entry.translation is not None
+        )
+        glossary_terms = self._glossary_terms_by_entry(project, translated_entries)
         entries_checked = 0
         entries_with_issues = 0
         issues_by_entry: dict[str, tuple[ValidationIssue, ...]] = {}
         entries_with_updated_statuses: list[TranslationEntry] = []
-        for entry in project.entries:
-            if entry.translation is None:
-                continue
+        for entry in translated_entries:
             entries_checked += 1
             issues = (
-                *self._validate_entry(project, entry),
+                *self._validate_entry(project, entry, glossary_terms.get(entry.id, ())),
                 *consistency_issues.get(entry.id, ()),
                 *existing_issues.get(entry.id, ()),
             )
@@ -97,6 +100,7 @@ class ValidateProject:
         self,
         project: Project,
         entry: TranslationEntry,
+        glossary_terms: tuple[GlossaryTerm, ...],
     ) -> tuple[ValidationIssue, ...]:
         if entry.translation is None:
             return ()
@@ -114,15 +118,27 @@ class ValidateProject:
                     "Translation must preserve all source placeholders",
                 )
             )
-        if self._glossary is not None:
-            terms = self._glossary.find_for_sources(
-                project.source_language,
-                project.target_language,
-                (entry.source,),
-            )
+        if glossary_terms:
             issues.extend(
                 self._glossary_validator.validate(
-                    entry.source, entry.translation, terms
+                    entry.source, entry.translation, glossary_terms
                 )
             )
         return tuple(issues)
+
+    def _glossary_terms_by_entry(
+        self,
+        project: Project,
+        entries: tuple[TranslationEntry, ...],
+    ) -> dict[str, tuple[GlossaryTerm, ...]]:
+        if self._glossary is None or not entries:
+            return {}
+        matches = self._glossary.find_for_sources_batch(
+            project.source_language,
+            project.target_language,
+            tuple(entry.source for entry in entries),
+        )
+        return {
+            entry.id: entry_matches
+            for entry, entry_matches in zip(entries, matches, strict=True)
+        }

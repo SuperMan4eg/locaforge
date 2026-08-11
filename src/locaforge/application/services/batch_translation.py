@@ -55,9 +55,10 @@ class BatchTranslationService:
     ) -> BatchResult:
         if self._llm_client is None:
             raise ModelUnavailableError("No LLM backend is configured")
+        selected_ids = tuple(dict.fromkeys(entry_ids))
         previous_entries = {
-            entry_id: repository.get_entry(project.id, entry_id)
-            for entry_id in entry_ids
+            entry.id: entry
+            for entry in repository.get_entries(project.id, selected_ids)
         }
         previous_issues: dict[str, list[ValidationIssue]] = {}
         for issue in repository.list_validation_issues(project.id):
@@ -93,6 +94,8 @@ class BatchTranslationService:
                 settings.system_prompt,
                 is_cancelled,
                 settings.translation_reasoning,
+                project=project,
+                keep_alive_seconds=settings.keep_alive_seconds,
             )
             translated_entry_ids.extend(result.translated_entry_ids)
             skipped_entry_ids.extend(result.skipped_entry_ids)

@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 import pytest
 
 from locaforge.application.errors import ModelUnavailableError
@@ -15,6 +17,12 @@ class Repository:
     def get_entry(self, _project_id: str, _entry_id: str) -> TranslationEntry:
         assert self.entry is not None
         return self.entry
+
+    def get_entries(
+        self, _project_id: str, entry_ids: Sequence[str]
+    ) -> tuple[TranslationEntry, ...]:
+        assert self.entry is not None
+        return tuple(self.entry for _entry_id in entry_ids)
 
     def list_validation_issues(self, _project_id: str) -> tuple[()]:
         return ()

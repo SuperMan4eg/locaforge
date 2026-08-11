@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from locaforge.application.dto.validation import ValidationCode, ValidationIssue
@@ -11,6 +12,23 @@ from locaforge.infrastructure.persistence.sqlite_glossary import SQLiteGlossary
 from locaforge.infrastructure.persistence.sqlite_project_repository import (
     SQLiteProjectRepository,
 )
+
+
+class CountingSQLiteGlossary(SQLiteGlossary):
+    def __init__(self, database_path: Path) -> None:
+        self.batch_calls = 0
+        super().__init__(database_path)
+
+    def find_for_sources_batch(
+        self,
+        source_language: str,
+        target_language: str,
+        sources: Sequence[str],
+    ) -> tuple[tuple[GlossaryTerm, ...], ...]:
+        self.batch_calls += 1
+        return super().find_for_sources_batch(
+            source_language, target_language, sources
+        )
 
 
 def make_repository(tmp_path: Path) -> SQLiteProjectRepository:
@@ -60,6 +78,16 @@ def test_validate_project_rechecks_glossary_and_restores_valid_error_entry(
     assert repository.list_validation_issues("project-1")[0].code is (
         ValidationCode.GLOSSARY_MISMATCH
     )
+
+
+def test_validate_project_matches_glossary_in_one_batch(tmp_path: Path) -> None:
+    repository = make_repository(tmp_path)
+    glossary = CountingSQLiteGlossary(tmp_path / "glossary.db")
+    glossary.store(GlossaryTerm("en", "ru", "Save", "Сохранить"))
+
+    ValidateProject(repository, glossary=glossary).execute("project-1")
+
+    assert glossary.batch_calls == 1
 
 
 def test_validate_project_leaves_untranslated_model_errors_untouched(tmp_path: Path) -> None:

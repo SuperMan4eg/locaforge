@@ -12,6 +12,7 @@ from PySide6.QtCore import qVersion
 
 from locaforge import __version__ as locaforge_version
 from locaforge.app.exception_handler import get_last_incident_id
+from locaforge.application.dto.model_performance import ModelPerformanceSnapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +26,7 @@ class DiagnosticContext:
     entry_count: int = 0
     source_formats: tuple[str, ...] = ()
     project_dirty: bool = False
+    model_performance: ModelPerformanceSnapshot = ModelPerformanceSnapshot()
 
 
 def build_diagnostic_report(context: DiagnosticContext) -> str:
@@ -51,6 +53,14 @@ def build_diagnostic_report(context: DiagnosticContext) -> str:
         "source_formats": ",".join(sorted(set(context.source_formats))) or "none",
         "project_dirty": str(context.project_dirty).lower(),
         "last_incident_id": get_last_incident_id() or "none",
+        "model_request_count": str(context.model_performance.request_count),
+        "model_total_seconds": _seconds(context.model_performance.total_duration_ns),
+        "model_load_seconds": _seconds(context.model_performance.load_duration_ns),
+        "model_prompt_tokens": str(context.model_performance.prompt_eval_count),
+        "model_generated_tokens": str(context.model_performance.eval_count),
+        "model_generation_tokens_per_second": (
+            f"{context.model_performance.generation_tokens_per_second:.2f}"
+        ),
     }
     lines = ["LocaForge diagnostic report"]
     lines.extend(f"{key}: {value}" for key, value in values.items())
@@ -66,3 +76,7 @@ def build_diagnostic_report(context: DiagnosticContext) -> str:
 
 def _optional_value(value: object | None) -> str:
     return "unknown" if value is None else str(value)
+
+
+def _seconds(nanoseconds: int) -> str:
+    return f"{nanoseconds / 1_000_000_000:.3f}"

@@ -11,6 +11,12 @@ from locaforge.presentation.translation_table_model import TranslationTableModel
 
 
 class TranslationFilterProxyModel(QSortFilterProxyModel):
+    _SEARCH_FIELD_INDEX = {
+        "key": 0,
+        "source": 1,
+        "translation": 2,
+        "context": 3,
+    }
     _STATUS_ORDER = {
         "untranslated": 0,
         "error": 1,
@@ -69,34 +75,22 @@ class TranslationFilterProxyModel(QSortFilterProxyModel):
         if source_model is None:
             return False
         translation_model = cast(TranslationTableModel, source_model)
+        entry = translation_model.entry_at(source_row)
         if self._document_ids:
-            entry = translation_model.entry_at(source_row)
             if entry.document_id not in self._document_ids:
                 return False
         if self._issue_entry_ids is not None:
-            entry = translation_model.entry_at(source_row)
             if entry.id not in self._issue_entry_ids:
                 return False
         if self._statuses:
-            status = source_model.data(
-                source_model.index(source_row, 3, source_parent),
-                TranslationTableModel.status_role,
-            )
-            if status not in self._statuses:
+            if entry.status.value not in self._statuses:
                 return False
         if not self._search_text:
             return True
-        entry = translation_model.entry_at(source_row)
-        values = {
-            "key": source_model.data(source_model.index(source_row, 0, source_parent)),
-            "source": source_model.data(source_model.index(source_row, 1, source_parent)),
-            "translation": source_model.data(source_model.index(source_row, 2, source_parent)),
-            "context": entry.context or "",
-        }
-        selected_values = values.values() if self._search_field == "all" else (
-            values[self._search_field],
-        )
-        return any(self._search_text in str(value).casefold() for value in selected_values)
+        values = translation_model.search_values_at(source_row)
+        if self._search_field == "all":
+            return any(self._search_text in value for value in values)
+        return self._search_text in values[self._SEARCH_FIELD_INDEX[self._search_field]]
 
     def lessThan(
         self,
@@ -105,10 +99,10 @@ class TranslationFilterProxyModel(QSortFilterProxyModel):
     ) -> bool:
         if left.column() == 3:
             source_model = self.sourceModel()
-            if source_model is not None:
-                left_status = source_model.data(left, TranslationTableModel.status_role)
-                right_status = source_model.data(right, TranslationTableModel.status_role)
-                return self._STATUS_ORDER.get(str(left_status), 99) < self._STATUS_ORDER.get(
-                    str(right_status), 99
+            if isinstance(source_model, TranslationTableModel):
+                left_status = source_model.entry_at(left.row()).status.value
+                right_status = source_model.entry_at(right.row()).status.value
+                return self._STATUS_ORDER.get(left_status, 99) < self._STATUS_ORDER.get(
+                    right_status, 99
                 )
         return super().lessThan(left, right)

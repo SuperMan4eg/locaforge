@@ -18,11 +18,66 @@ python scripts/check_docs.py
 
 Run the app with `locaforge` or `python -m locaforge`.
 
+## Performance baseline
+
+Run the reproducible local benchmark before and after performance-sensitive changes:
+
+```powershell
+$env:PYTHONPATH = "src"
+$env:QT_QPA_PLATFORM = "offscreen"
+python scripts/benchmark_performance.py `
+  --json benchmark.json `
+  --markdown benchmark.md
+```
+
+The default matrix creates isolated projects with 1,000, 10,000, and 50,000 entries and records
+median and nearest-rank p95 timings over five measured runs after one warm-up. It covers cold UI
+composition, entry lookup, statistics, table search and document filtering, table updates, project
+opening, editing, Undo/Redo, validation, full repository writes, manual `.lfproj` saves, autosaves,
+translation-memory matching, and cached batch glossary matching. Fixtures live in a temporary
+directory and are deleted after the
+run. Results include Python, PySide, SQLite, OS, and processor metadata for meaningful comparisons.
+
+Use the smoke-sized run while changing the benchmark itself:
+
+```powershell
+python scripts/benchmark_performance.py --quick --skip-startup
+```
+
+An Ollama measurement is opt-in because it loads and runs the selected local model:
+
+```powershell
+python scripts/benchmark_performance.py `
+  --ollama-url http://127.0.0.1:11434 `
+  --ollama-model qwen3:8b `
+  --ollama-batch-sizes 5 10 20 40 `
+  --ollama-keep-alive-seconds 300 `
+  --json benchmark-with-ollama.json
+```
+
+The Ollama result retains server-reported load, prompt-evaluation, generation, and token-count
+metrics, plus generated tokens per second and translated entries per minute for each batch size.
+Use `-1` to keep the model loaded or `0` to unload it after every request when measuring cold-load
+behavior. Do not compare reports from different power modes, background workloads, Python versions,
+or model configurations. Benchmarks are diagnostic and deliberately have no timing thresholds in CI.
+The checked-in reference for the current development machine is
+`benchmarks/baseline-windows-cpython314.json`.
+
+The stage-6 target-machine run is stored in `benchmarks/ollama-gemma4-12b-stage6.json`. With
+`gemma4:12b`, three measured runs after warm-up returned every requested entry; batch size 5 had
+the best median throughput (124.2 returned entries/minute) and a 4.03-second p95 latency. It is the
+default for new or previously unconfigured profiles. Explicitly stored batch sizes are preserved.
+
+The stage-7 CPython JIT, Cython, and Nuitka measurements and the resulting packaging decision are
+documented in the [runtime and compiler experiment](performance-stage7.md).
+
 ## Model settings inheritance
 
 `ApplicationSettings.model_settings` is the user-scoped global profile. It contains the
-translation model, optional reviewer model, reasoning modes, timeout, batch size, and system
-prompts. It is stored in Qt application settings and supplied to `ProjectWorkspace` at startup.
+translation model, optional reviewer model, reasoning modes, timeout, batch size, Ollama keep-alive,
+and system prompts. It is stored in Qt application settings and supplied to `ProjectWorkspace` at
+startup. The safe diagnostic report contains only aggregate Ollama timings and token counts; model
+inputs, outputs, prompts, and project content are never included.
 
 Every project also stores `model_settings` and `model_settings_override_enabled`:
 

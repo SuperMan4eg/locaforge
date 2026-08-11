@@ -7,6 +7,7 @@ from locaforge.application.dto.validation import ValidationCode, ValidationIssue
 from locaforge.application.ports.llm import LLMClient
 from locaforge.application.ports.project_repository import ProjectRepository
 from locaforge.application.services.project_context_builder import ProjectContextBuilder
+from locaforge.domain.project import Project
 
 
 class ReviewTranslations:
@@ -22,8 +23,12 @@ class ReviewTranslations:
         timeout: float,
         review_prompt: str = "",
         reasoning: str = "off",
+        project: Project | None = None,
+        keep_alive_seconds: int = 300,
     ) -> int:
-        project = self._repository.get(project_id)
+        project = project or self._repository.get(project_id)
+        if project.id != project_id:
+            raise ValueError("The supplied project does not match the requested project id")
         review_prompt = ProjectContextBuilder().combine_with_prompt(project, review_prompt)
         entries = [
             project.get_entry(entry_id)
@@ -42,6 +47,7 @@ class ReviewTranslations:
                 timeout,
                 review_prompt,
                 reasoning,
+                keep_alive_seconds,
             )
         )
         reviewed = {result.entry_id: result for result in response.results}

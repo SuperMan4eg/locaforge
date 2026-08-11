@@ -1,0 +1,606 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-11T14:38:39.529961+00:00",
+  "environment": {
+    "python": "3.14.6",
+    "python_implementation": "CPython",
+    "python_jit_available": "True",
+    "python_jit_enabled": "False",
+    "python_gil_enabled": "True",
+    "pyside": "6.11.1",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "Intel64 Family 6 Model 198 Stepping 2, GenuineIntel",
+    "sqlite": "3.50.4"
+  },
+  "configuration": {
+    "sizes": [
+      10000,
+      50000
+    ],
+    "iterations": 7,
+    "warmups": 3,
+    "documents": 500,
+    "translation_memory_records": 10000,
+    "glossary_sources": 500,
+    "glossary_terms": 200,
+    "startup_included": true,
+    "ollama_included": false,
+    "ollama_batch_sizes": [
+      5,
+      10,
+      20,
+      40
+    ],
+    "ollama_keep_alive_seconds": 300
+  },
+  "results": [
+    {
+      "scenario": "cold_ui_startup",
+      "size": 0,
+      "iterations": 7,
+      "median_ms": 471.2669,
+      "p95_ms": 475.8942,
+      "minimum_ms": 466.5626,
+      "maximum_ms": 475.8942,
+      "samples_ms": [
+        471.2669,
+        474.076,
+        466.6872,
+        475.8942,
+        466.5626,
+        467.6882,
+        472.0133
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "project_entry_lookup_1000",
+      "size": 10000,
+      "iterations": 7,
+      "median_ms": 0.1385,
+      "p95_ms": 0.1407,
+      "minimum_ms": 0.137,
+      "maximum_ms": 0.1407,
+      "samples_ms": [
+        0.1383,
+        0.1385,
+        0.1403,
+        0.1377,
+        0.137,
+        0.1386,
+        0.1407
+      ],
+      "details": {
+        "lookups": 1000
+      }
+    },
+    {
+      "scenario": "project_statistics",
+      "size": 10000,
+      "iterations": 7,
+      "median_ms": 1.357,
+      "p95_ms": 1.5128,
+      "minimum_ms": 1.3239,
+      "maximum_ms": 1.5128,
+      "samples_ms": [
+        1.3421,
+        1.3239,
+        1.3431,
+        1.357,
+        1.4453,
+        1.4864,
+        1.5128
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "table_text_filter",
+      "size": 10000,
+      "iterations": 7,
+      "median_ms": 12.4291,
+      "p95_ms": 12.9442,
+      "minimum_ms": 12.383,
+      "maximum_ms": 12.9442,
+      "samples_ms": [
+        12.4271,
+        12.9442,
+        12.4291,
+        12.8377,
+        12.396,
+        12.689,
+        12.383
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "table_document_filter",
+      "size": 10000,
+      "iterations": 7,
+      "median_ms": 7.0994,
+      "p95_ms": 7.6803,
+      "minimum_ms": 6.9605,
+      "maximum_ms": 7.6803,
+      "samples_ms": [
+        7.6803,
+        7.0937,
+        7.1475,
+        7.002,
+        6.9605,
+        7.2034,
+        7.0994
+      ],
+      "details": {
+        "documents": 500
+      }
+    },
+    {
+      "scenario": "table_update_last_entry",
+      "size": 10000,
+      "iterations": 7,
+      "median_ms": 0.0073,
+      "p95_ms": 0.008,
+      "minimum_ms": 0.0071,
+      "maximum_ms": 0.008,
+      "samples_ms": [
+        0.008,
+        0.0077,
+        0.0076,
+        0.0073,
+        0.0071,
+        0.0073,
+        0.0072
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "project_explorer_refresh",
+      "size": 10000,
+      "iterations": 7,
+      "median_ms": 6.4523,
+      "p95_ms": 7.3115,
+      "minimum_ms": 6.1896,
+      "maximum_ms": 7.3115,
+      "samples_ms": [
+        6.4523,
+        6.1896,
+        6.2411,
+        6.3587,
+        6.534,
+        7.2433,
+        7.3115
+      ],
+      "details": {
+        "documents": 500
+      }
+    },
+    {
+      "scenario": "open_lfproj",
+      "size": 10000,
+      "iterations": 7,
+      "median_ms": 60.6229,
+      "p95_ms": 89.3061,
+      "minimum_ms": 58.9482,
+      "maximum_ms": 89.3061,
+      "samples_ms": [
+        61.7014,
+        89.3061,
+        60.6229,
+        63.0723,
+        59.9379,
+        58.9482,
+        60.3796
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "edit_translation",
+      "size": 10000,
+      "iterations": 7,
+      "median_ms": 54.0414,
+      "p95_ms": 67.3106,
+      "minimum_ms": 52.8967,
+      "maximum_ms": 67.3106,
+      "samples_ms": [
+        67.3106,
+        53.1696,
+        53.1183,
+        52.8967,
+        54.0414,
+        56.3716,
+        56.2549
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "undo_redo_cycle",
+      "size": 10000,
+      "iterations": 7,
+      "median_ms": 7.9415,
+      "p95_ms": 9.5911,
+      "minimum_ms": 7.6848,
+      "maximum_ms": 9.5911,
+      "samples_ms": [
+        8.0688,
+        9.5911,
+        7.6848,
+        7.9415,
+        7.8914,
+        8.5392,
+        7.8558
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "validate_project",
+      "size": 10000,
+      "iterations": 7,
+      "median_ms": 95.5181,
+      "p95_ms": 117.6632,
+      "minimum_ms": 95.1579,
+      "maximum_ms": 117.6632,
+      "samples_ms": [
+        95.3928,
+        95.5181,
+        100.0191,
+        117.6632,
+        95.1579,
+        96.3596,
+        95.1862
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "repository_full_save",
+      "size": 10000,
+      "iterations": 7,
+      "median_ms": 73.0064,
+      "p95_ms": 77.3039,
+      "minimum_ms": 71.8292,
+      "maximum_ms": 77.3039,
+      "samples_ms": [
+        77.3039,
+        72.5414,
+        75.4402,
+        73.0064,
+        75.7771,
+        72.3149,
+        71.8292
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "manual_save_lfproj",
+      "size": 10000,
+      "iterations": 7,
+      "median_ms": 58.5772,
+      "p95_ms": 70.8827,
+      "minimum_ms": 57.5958,
+      "maximum_ms": 70.8827,
+      "samples_ms": [
+        57.5958,
+        57.6615,
+        58.7818,
+        58.5772,
+        57.6282,
+        62.3095,
+        70.8827
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "autosave_lfproj",
+      "size": 10000,
+      "iterations": 7,
+      "median_ms": 23.5777,
+      "p95_ms": 25.8218,
+      "minimum_ms": 22.1245,
+      "maximum_ms": 25.8218,
+      "samples_ms": [
+        22.1245,
+        22.6749,
+        22.6398,
+        24.5766,
+        25.8218,
+        23.5777,
+        24.0794
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "project_entry_lookup_1000",
+      "size": 50000,
+      "iterations": 7,
+      "median_ms": 0.1582,
+      "p95_ms": 0.1991,
+      "minimum_ms": 0.1557,
+      "maximum_ms": 0.1991,
+      "samples_ms": [
+        0.1564,
+        0.1557,
+        0.1564,
+        0.1991,
+        0.16,
+        0.162,
+        0.1582
+      ],
+      "details": {
+        "lookups": 1000
+      }
+    },
+    {
+      "scenario": "project_statistics",
+      "size": 50000,
+      "iterations": 7,
+      "median_ms": 7.5254,
+      "p95_ms": 7.8117,
+      "minimum_ms": 7.4837,
+      "maximum_ms": 7.8117,
+      "samples_ms": [
+        7.8117,
+        7.6043,
+        7.5254,
+        7.4927,
+        7.4837,
+        7.5675,
+        7.4996
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "table_text_filter",
+      "size": 50000,
+      "iterations": 7,
+      "median_ms": 62.4795,
+      "p95_ms": 63.2082,
+      "minimum_ms": 61.2413,
+      "maximum_ms": 63.2082,
+      "samples_ms": [
+        62.652,
+        62.5122,
+        62.0625,
+        61.2413,
+        61.5086,
+        63.2082,
+        62.4795
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "table_document_filter",
+      "size": 50000,
+      "iterations": 7,
+      "median_ms": 37.3071,
+      "p95_ms": 41.4759,
+      "minimum_ms": 34.6012,
+      "maximum_ms": 41.4759,
+      "samples_ms": [
+        37.3071,
+        34.6012,
+        34.6229,
+        41.4759,
+        36.464,
+        37.8075,
+        38.8203
+      ],
+      "details": {
+        "documents": 500
+      }
+    },
+    {
+      "scenario": "table_update_last_entry",
+      "size": 50000,
+      "iterations": 7,
+      "median_ms": 0.0068,
+      "p95_ms": 0.0073,
+      "minimum_ms": 0.0065,
+      "maximum_ms": 0.0073,
+      "samples_ms": [
+        0.0073,
+        0.0069,
+        0.0068,
+        0.0066,
+        0.0065,
+        0.0068,
+        0.0066
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "project_explorer_refresh",
+      "size": 50000,
+      "iterations": 7,
+      "median_ms": 22.9227,
+      "p95_ms": 24.2906,
+      "minimum_ms": 19.582,
+      "maximum_ms": 24.2906,
+      "samples_ms": [
+        22.9227,
+        19.582,
+        23.2869,
+        24.2906,
+        22.5058,
+        22.3163,
+        23.9971
+      ],
+      "details": {
+        "documents": 500
+      }
+    },
+    {
+      "scenario": "open_lfproj",
+      "size": 50000,
+      "iterations": 7,
+      "median_ms": 314.9992,
+      "p95_ms": 340.3595,
+      "minimum_ms": 285.1108,
+      "maximum_ms": 340.3595,
+      "samples_ms": [
+        340.3595,
+        289.7111,
+        317.6108,
+        286.4743,
+        314.9992,
+        323.2228,
+        285.1108
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "edit_translation",
+      "size": 50000,
+      "iterations": 7,
+      "median_ms": 264.377,
+      "p95_ms": 271.9326,
+      "minimum_ms": 236.4506,
+      "maximum_ms": 271.9326,
+      "samples_ms": [
+        244.616,
+        268.6384,
+        239.2954,
+        264.377,
+        271.9326,
+        236.4506,
+        271.6009
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "undo_redo_cycle",
+      "size": 50000,
+      "iterations": 7,
+      "median_ms": 7.4456,
+      "p95_ms": 7.9343,
+      "minimum_ms": 6.9259,
+      "maximum_ms": 7.9343,
+      "samples_ms": [
+        7.9343,
+        7.7093,
+        7.8368,
+        7.3456,
+        7.4456,
+        7.0591,
+        6.9259
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "validate_project",
+      "size": 50000,
+      "iterations": 7,
+      "median_ms": 522.5286,
+      "p95_ms": 527.0467,
+      "minimum_ms": 519.7588,
+      "maximum_ms": 527.0467,
+      "samples_ms": [
+        521.2124,
+        522.4543,
+        522.5286,
+        524.6285,
+        527.0467,
+        523.9213,
+        519.7588
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "repository_full_save",
+      "size": 50000,
+      "iterations": 7,
+      "median_ms": 611.0049,
+      "p95_ms": 646.8501,
+      "minimum_ms": 601.4309,
+      "maximum_ms": 646.8501,
+      "samples_ms": [
+        605.9505,
+        628.7748,
+        601.4309,
+        611.0049,
+        607.5549,
+        646.8501,
+        617.0602
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "manual_save_lfproj",
+      "size": 50000,
+      "iterations": 7,
+      "median_ms": 303.0318,
+      "p95_ms": 312.0606,
+      "minimum_ms": 277.2712,
+      "maximum_ms": 312.0606,
+      "samples_ms": [
+        312.0606,
+        277.2712,
+        308.092,
+        278.5659,
+        311.9959,
+        278.4695,
+        303.0318
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "autosave_lfproj",
+      "size": 50000,
+      "iterations": 7,
+      "median_ms": 80.7386,
+      "p95_ms": 87.7073,
+      "minimum_ms": 75.3999,
+      "maximum_ms": 87.7073,
+      "samples_ms": [
+        75.3999,
+        80.1997,
+        87.7073,
+        85.4773,
+        77.991,
+        80.7948,
+        80.7386
+      ],
+      "details": {}
+    },
+    {
+      "scenario": "translation_memory_similar",
+      "size": 10000,
+      "iterations": 7,
+      "median_ms": 2.2519,
+      "p95_ms": 2.3026,
+      "minimum_ms": 2.2103,
+      "maximum_ms": 2.3026,
+      "samples_ms": [
+        2.2364,
+        2.264,
+        2.2478,
+        2.2519,
+        2.2103,
+        2.2715,
+        2.3026
+      ],
+      "details": {
+        "candidate_limit": 300,
+        "scorer": "rapidfuzz.ratio"
+      }
+    },
+    {
+      "scenario": "glossary_batch_match",
+      "size": 500,
+      "iterations": 7,
+      "median_ms": 38.8855,
+      "p95_ms": 39.2105,
+      "minimum_ms": 38.7107,
+      "maximum_ms": 39.2105,
+      "samples_ms": [
+        39.0326,
+        38.7268,
+        39.2105,
+        39.0224,
+        38.7107,
+        38.7946,
+        38.8855
+      ],
+      "details": {
+        "terms": 200
+      }
+    }
+  ]
+}

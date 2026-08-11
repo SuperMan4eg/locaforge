@@ -1,5 +1,9 @@
 """Data transfer objects for application use cases."""
 
+from locaforge.application.dto.model_performance import (
+    ModelPerformanceSnapshot,
+    ModelUsageMetrics,
+)
 from locaforge.application.dto.project import (
     CreatedProject,
     ExportPreflight,
@@ -25,6 +29,8 @@ __all__ = [
     "CreatedProject",
     "EntryValidationIssue",
     "ExportPreflight",
+    "ModelPerformanceSnapshot",
+    "ModelUsageMetrics",
     "ProjectValidationResult",
     "ProjectStatistics",
     "OpenedProject",

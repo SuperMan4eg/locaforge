@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
+from locaforge.application.dto.model_performance import ModelPerformanceSnapshot
 from locaforge.application.dto.project import (
     DocumentRefreshPreview,
     ExportPreflight,
@@ -29,7 +30,7 @@ from locaforge.application.ports.json_format import (
     JsonFieldMapping,
     JsonImporter,
 )
-from locaforge.application.ports.llm import LLMClient
+from locaforge.application.ports.llm import LLMClient, ModelPerformanceProvider
 from locaforge.application.ports.po_format import PoExporter, PoImporter
 from locaforge.application.ports.project_container import ProjectContainer
 from locaforge.application.ports.project_metadata_lookup import ProjectMetadataLookup
@@ -661,6 +662,11 @@ class ProjectWorkspace:
 
     def ollama_health_check(self) -> bool:
         return self._model_configuration.health_check()
+
+    def model_performance_snapshot(self) -> ModelPerformanceSnapshot:
+        if isinstance(self._llm_client, ModelPerformanceProvider):
+            return self._llm_client.performance_snapshot()
+        return ModelPerformanceSnapshot()
 
     def set_llm_client(self, llm_client: LLMClient) -> None:
         """Replace the configured local backend (for example after changing its URL)."""

@@ -13,6 +13,9 @@ class Repository:
     def list_validation_issues(self, _project_id: str) -> tuple[()]:
         return ()
 
+    def get_entries(self, _project_id: str, _entry_ids: object) -> tuple[()]:
+        return ()
+
     def record_translation_operation(self, *args: object) -> None:
         self.operations.append(args)
 

@@ -50,6 +50,7 @@ class ProjectProfileService:
                 settings.model,
                 settings.timeout_seconds,
                 research_context,
+                settings.keep_alive_seconds,
             )
         ).profile
 
