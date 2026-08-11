@@ -16,6 +16,7 @@ from locaforge.application.ports.xml_format import XmlFieldMapping, XmlImporter
 from locaforge.application.project_session import ProjectSession
 from locaforge.application.services.document_refresh import ImportFieldMapping
 from locaforge.application.services.document_workspace import DocumentWorkspaceService
+from locaforge.application.services.project_path import is_safe_project_path
 from locaforge.application.use_cases.create_project_from_csv import CreateProjectFromCsv
 from locaforge.application.use_cases.create_project_from_json import CreateProjectFromJson
 from locaforge.application.use_cases.create_project_from_po import CreateProjectFromPo
@@ -159,8 +160,7 @@ class SourceImportService:
                 "Imported files must have unique names or relative paths within the project"
             )
         for value in requested_paths.values():
-            relative_path = Path(value)
-            if relative_path.is_absolute() or ".." in relative_path.parts or not value:
+            if not is_safe_project_path(value):
                 raise ValueError(f"Unsafe project document path: {value!r}")
         mappings = field_mappings or {}
         imported_projects = [

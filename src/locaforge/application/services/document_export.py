@@ -7,6 +7,7 @@ import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from locaforge.application.services.project_path import is_safe_project_path
 from locaforge.domain.project import Project
 
 type DocumentExporter = Callable[[Project, str, Path], None]
@@ -37,11 +38,11 @@ class DocumentExportService:
             for document in project.documents:
                 if document.id not in selected_ids:
                     continue
-                relative_path = Path(document.source_path)
-                if relative_path.is_absolute() or ".." in relative_path.parts:
+                if not is_safe_project_path(document.source_path):
                     raise ValueError(
                         f"Document {document.name!r} has an unsafe export path"
                     )
+                relative_path = Path(document.source_path)
                 document_project = Project(
                     id=project.id,
                     name=document.name,

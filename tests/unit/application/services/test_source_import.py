@@ -104,7 +104,10 @@ def test_adds_document_at_requested_relative_path(tmp_path: Path) -> None:
     assert repository.saved == [project]
 
 
-@pytest.mark.parametrize("document_path", ["../outside.json", "C:/outside.json", ""])
+@pytest.mark.parametrize(
+    "document_path",
+    ["../outside.json", "C:/outside.json", "C:outside.json", "//server/share.json", ""],
+)
 def test_rejects_unsafe_document_path_before_import(
     tmp_path: Path, document_path: str
 ) -> None:

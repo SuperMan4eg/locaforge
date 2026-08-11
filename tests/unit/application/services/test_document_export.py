@@ -83,7 +83,10 @@ def test_rejects_empty_or_unknown_selection(
         )
 
 
-@pytest.mark.parametrize("unsafe_path", ["../outside.po", "C:/absolute.po"])
+@pytest.mark.parametrize(
+    "unsafe_path",
+    ["../outside.po", "C:/absolute.po", "C:drive-relative.po", "//server/share.po"],
+)
 def test_rejects_unsafe_document_paths(tmp_path: Path, unsafe_path: str) -> None:
     destination = tmp_path / "exported"
 

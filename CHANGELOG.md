@@ -15,7 +15,7 @@ All notable changes to LocaForge are documented in this file.
 - Architecture documentation now records the orchestration boundaries between the stateful
   workspace facade, application services, and presentation components.
 - The refactored architecture is covered by expanded unit and smoke tests; the release baseline
-  passes 547 tests together with strict type checking and linting.
+  passes 551 tests together with strict type checking and linting.
 
 ## 0.4.1 — 2026-08-10
 
