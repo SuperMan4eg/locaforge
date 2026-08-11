@@ -181,8 +181,8 @@ def test_main_window_renders_preloaded_project(tmp_path: Path) -> None:
         application.processEvents()
 
         explorer_lines = [
-            window._project_explorer.item(row).text()
-            for row in range(window._project_explorer.count())
+            window._project_ui.explorer.item(row).text()
+            for row in range(window._project_ui.explorer.count())
         ]
 
         assert window._model.rowCount() == 2
@@ -194,12 +194,12 @@ def test_main_window_renders_preloaded_project(tmp_path: Path) -> None:
             "Progress: 0% (0/2)",
         ]
         assert "Files (1):" in explorer_lines
-        assert window._project_file_tree.topLevelItemCount() == 1
-        assert window._project_file_tree.topLevelItem(0).text(0) == "dialog.json"
-        assert window._project_file_tree.topLevelItem(0).text(1) == "JSON"
-        assert window._project_file_count.text() == "1 / 1 files"
-        assert window._table.currentIndex().isValid()
-        assert window._source_editor.toPlainText() == "Hello"
+        assert window._project_ui.file_tree.topLevelItemCount() == 1
+        assert window._project_ui.file_tree.topLevelItem(0).text(0) == "dialog.json"
+        assert window._project_ui.file_tree.topLevelItem(0).text(1) == "JSON"
+        assert window._project_ui.file_count.text() == "1 / 1 files"
+        assert window._translation_ui.table.currentIndex().isValid()
+        assert window._translation_ui.source_editor.toPlainText() == "Hello"
     finally:
         window.close()
         application.processEvents()
@@ -223,7 +223,7 @@ def test_main_window_copies_diagnostics_without_project_content(tmp_path: Path) 
         recent_projects=RecentProjectsStore(settings),
     )
     try:
-        window._copy_diagnostics_button.click()
+        window._sidebars.copy_diagnostics_button.click()
         report = application.clipboard().text()
 
         assert "project_open: true" in report
@@ -257,11 +257,11 @@ def test_main_window_names_next_undo_and_redo_actions(tmp_path: Path) -> None:
     try:
         window.show()
         application.processEvents()
-        assert window._undo_translation_action.text() == "Undo Edit translation"
+        assert window._edit_actions.undo.text() == "Undo Edit translation"
 
         window._undo_last_translation()
         application.processEvents()
-        assert window._redo_translation_action.text() == "Redo Edit translation"
+        assert window._edit_actions.redo.text() == "Redo Edit translation"
     finally:
         workspace.save()
         window.close()
@@ -276,10 +276,10 @@ def test_project_tab_shortcuts_target_file_search_and_visible_files(tmp_path: Pa
         window._focus_active_search()
         application.processEvents()
 
-        assert window._project_file_search.hasFocus()
-        window._project_file_search.setText("menu")
+        assert window._project_ui.file_search.hasFocus()
+        window._project_ui.file_search.setText("menu")
         window._clear_project_filter_or_selection()
-        assert window._project_file_search.text() == ""
+        assert window._project_ui.file_search.text() == ""
     finally:
         window.close()
         application.processEvents()
