@@ -58,9 +58,22 @@ creates, edits, saves, reopens, and exports an isolated JSON project.
 
 ## Continuous integration and releases
 
-CI runs Ruff, mypy, and pytest on Python 3.12 and 3.13; checks documentation; builds wheel and
-sdist; and runs both packaged build checks on the Windows archive. A tag matching `v<project.version>`
-publishes a GitHub Release with packages, the portable archive, and SHA-256 checksums.
+Tests are split into three execution layers. The fast layer excludes Qt, SQLite, containers,
+and format I/O; integration tests may run in parallel, while GUI tests remain sequential:
+
+```powershell
+python -m pytest -m unit -n auto --durations=10
+python -m pytest -m integration -n auto --durations=10
+python -m pytest -m gui --durations=10
+```
+
+Run `python -m pytest` when a single full, sequential verification is preferable. CI starts the
+three layers as separate jobs and reports their slowest tests.
+
+CI runs Ruff, mypy, and fast unit tests on Python 3.12 and 3.13; runs integration and GUI tests
+on Python 3.12; checks documentation; builds wheel and sdist; and runs both packaged build checks
+on the Windows archive. A tag matching `v<project.version>` publishes a GitHub Release with
+packages, the portable archive, and SHA-256 checksums.
 
 ## Change checklist
 
