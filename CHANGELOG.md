@@ -6,6 +6,12 @@ All notable changes to LocaForge are documented in this file.
 
 ## Unreleased
 
+## 0.4.3 — 2026-08-11
+
+- Split tests into fast unit, parallel integration, and sequential GUI layers, with slow-test
+  reporting and independent CI feedback.
+- Reuse one Qt application throughout GUI tests to avoid repeated application startup.
+
 ## 0.4.2 — 2026-08-11
 
 - Application workflows are now split into focused services for projects, documents,

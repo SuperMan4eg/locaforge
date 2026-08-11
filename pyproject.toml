@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "locaforge"
-version = "0.4.2"
+version = "0.4.3"
 description = "Local-first AI CAT platform for software localization."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -19,13 +19,19 @@ locaforge = "locaforge.app.bootstrap:main"
 dev = [
     "mypy>=1.11",
     "pytest>=8.3",
+    "pytest-xdist>=3.6",
     "ruff>=0.6",
 ]
 build = ["pyinstaller>=6.16"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --basetemp=.pytest_tmp"
+addopts = "-q --strict-markers --basetemp=.pytest_tmp"
+markers = [
+    "unit: fast tests without Qt, SQLite, containers, or external I/O",
+    "integration: tests that exercise formats, SQLite, project containers, or workflows",
+    "gui: tests that construct or coordinate Qt presentation objects",
+]
 
 [tool.ruff]
 target-version = "py312"

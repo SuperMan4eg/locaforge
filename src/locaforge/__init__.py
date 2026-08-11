@@ -5,7 +5,7 @@ from locaforge.domain.entry import EntryStatus, TranslationEntry
 from locaforge.domain.project import Project
 from locaforge.domain.settings import ModelSettings
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 
 __all__ = [
     "__version__",

@@ -58,9 +58,23 @@ python -m pip install -e ".[build]"
 
 ## CI и релизы
 
-CI запускает Ruff, mypy и pytest на Python 3.12 и 3.13, проверяет документацию, собирает wheel
-и sdist, а также запускает обе проверки собранного Windows-архива. Тег `v<project.version>` публикует GitHub
-Release с пакетами, portable-архивом и SHA-256 checksums.
+Тесты разделены на три уровня выполнения. Быстрый уровень не использует Qt, SQLite,
+контейнеры и файловые форматы; интеграционные тесты можно запускать параллельно, а GUI-тесты
+остаются последовательными:
+
+```powershell
+python -m pytest -m unit -n auto --durations=10
+python -m pytest -m integration -n auto --durations=10
+python -m pytest -m gui --durations=10
+```
+
+Команда `python -m pytest` выполняет единую полную последовательную проверку. CI запускает три
+уровня отдельными заданиями и выводит самые медленные тесты каждого уровня.
+
+CI запускает Ruff, mypy и быстрые unit-тесты на Python 3.12 и 3.13, integration- и GUI-тесты
+на Python 3.12, проверяет документацию, собирает wheel и sdist, а также запускает обе проверки
+собранного Windows-архива. Тег `v<project.version>` публикует GitHub Release с пакетами,
+portable-архивом и SHA-256 checksums.
 
 ## Checklist изменений
 

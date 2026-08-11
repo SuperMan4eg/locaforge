@@ -19,8 +19,8 @@ jobs:
       - name: Check language pairs and links
         run: python scripts/check_docs.py
 
-  quality:
-    name: Quality (Python ${{ matrix.python-version }})
+  static-quality:
+    name: Static quality (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -38,7 +38,64 @@ jobs:
       - run: python -m pip install ".[dev]"
       - run: python -m ruff check src tests
       - run: python -m mypy src
-      - run: python -m pytest
+
+  unit-tests:
+    name: Unit tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install Qt runtime libraries
+        run: sudo apt-get install --yes libegl1
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install ".[dev]"
+      - name: Run fast unit tests
+        run: python -m pytest -m unit -n auto --durations=10
+        env:
+          PYTHONPATH: src
+          QT_QPA_PLATFORM: offscreen
+
+  integration-tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Qt runtime libraries
+        run: sudo apt-get install --yes libegl1
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install ".[dev]"
+      - name: Run integration tests in parallel
+        run: python -m pytest -m integration -n auto --durations=10
+        env:
+          PYTHONPATH: src
+          QT_QPA_PLATFORM: offscreen
+
+  gui-tests:
+    name: GUI tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Qt runtime libraries
+        run: sudo apt-get install --yes libegl1
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install ".[dev]"
+      - name: Run GUI tests sequentially
+        run: python -m pytest -m gui --durations=10
         env:
           PYTHONPATH: src
           QT_QPA_PLATFORM: offscreen
@@ -106,7 +163,7 @@ jobs:
   release:
     name: Publish GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [documentation, quality, package, windows-portable]
+    needs: [documentation, static-quality, unit-tests, integration-tests, gui-tests, package, windows-portable]
     runs-on: ubuntu-latest
     permissions:
       contents: write
